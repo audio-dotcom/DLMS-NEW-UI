@@ -1,0 +1,21 @@
+{
+  "id": "/DLMS/",
+  "name": "DLMS",
+  "short_name": "DLMS",
+  "description": "DLMS 2 in 4 out - Digital Loudspeaker Management System by YSN Audio. Kontrol DSP speaker (crossover, PEQ, limiter, delay, preset, RTA) lewat Bluetooth.",
+  "lang": "id",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#05070a",
+  "theme_color": "#05070a",
+  "categories": ["music", "utilities", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
