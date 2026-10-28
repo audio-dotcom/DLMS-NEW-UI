@@ -1,6 +1,6 @@
 // Service worker DLMS - cache-first untuk file statis, supaya app bisa dibuka offline.
 // Ganti angka VERSI setiap kali index.html/ikon diubah, supaya Chrome tidak memakai cache lama.
-const VERSI = 'dlms-v5';
+const VERSI = 'dlms-v7';
 const FILES = [
   './', './index.html', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png',

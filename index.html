@@ -117,18 +117,24 @@ function send(key,bytes){q.set(key,bytes);if(!busy)pump()}
 async function pump(){busy=true;while(q.size){const[k,b]=q.entries().next().value;q.delete(k);
  if(ch.C&&dev&&dev.gatt.connected){try{const d=new Uint8Array(b);ch.C.writeValueWithoutResponse?await ch.C.writeValueWithoutResponse(d):await ch.C.writeValue(d)}catch(e){}}
  await new Promise(r=>setTimeout(r,25))}busy=false}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function step(name,fn,n=3){for(let i=0;i<n;i++){try{return await fn()}catch(e){if(i===n-1){e.message=name+': '+e.message;throw e}await wait(500)}}}
 async function connect(){
  try{
   dev=await navigator.bluetooth.requestDevice({filters:[{services:[U.S]}]});
   dev.addEventListener('gattserverdisconnected',()=>{ch={};setSt(false)});
-  const sv=await(await dev.gatt.connect()).getPrimaryService(U.S);
-  ch.C=await sv.getCharacteristic(U.C);
-  for(const[k,id]of[['T',U.T],['R',U.R],['P',U.P],['G',U.G]]){ch[k]=await sv.getCharacteristic(id);await ch[k].startNotifications();
-   ch[k].addEventListener('characteristicvaluechanged',e=>onNote(k,new Uint8Array(e.target.value.buffer)))}
+  $('#bc').textContent='Menghubungkan...';
+  const sv=await step('layanan BLE',async()=>{try{const g=await dev.gatt.connect();await wait(800);return await g.getPrimaryService(U.S)}
+   catch(e){try{dev.gatt.disconnect()}catch(_){}await wait(600);throw e}},4);
+  ch.C=await step('karakteristik kontrol',()=>sv.getCharacteristic(U.C));
+  for(const[k,id]of[['T',U.T],['R',U.R],['P',U.P],['G',U.G]]){
+   ch[k]=await step('karakteristik '+k,()=>sv.getCharacteristic(id));
+   await step('notifikasi '+k,()=>ch[k].startNotifications());
+   ch[k].addEventListener('characteristicvaluechanged',e=>onNote(k,new Uint8Array(e.target.value.buffer)));await wait(250)}
   setSt(true);
-  await ch.G.writeValueWithResponse(new Uint8Array([0x13]));
+  await step('GET_INFO',()=>ch.G.writeValueWithResponse(new Uint8Array([0x13])),2).catch(()=>{});
   setTimeout(()=>send('all',[0x0B]),300);
- }catch(e){if(e.name!=='NotFoundError')alert('Gagal terhubung: '+e.message)}
+ }catch(e){ch={};try{dev&&dev.gatt.disconnect()}catch(_){}setSt(false);if(e.name!=='NotFoundError')alert('Gagal terhubung ('+e.message+').\nCoba: tutup aplikasi lain yang terhubung ke DLMS, matikan lalu nyalakan Bluetooth HP, lalu tekan Hubungkan lagi.')}
 }
 function setSt(on){const s=$('#st');s.textContent=on?'\u25CF Terhubung (Bluetooth)':'\u25CF Belum terhubung';s.className='st'+(on?'':' off');
  $('#dn').textContent=on&&dev?dev.name:'';$('#bc').textContent=on?'Putuskan':'Hubungkan';$('#sb').textContent=on?(dev.name||'OK'):'-';if(on)syncSpec()}
@@ -164,10 +170,10 @@ function buildMeters(){
  $('#mi').innerHTML=$('#mo').innerHTML='';
  ['IN 1','IN 2','OUT 1','OUT 2','OUT 3','OUT 4'].forEach((n,i)=>{const c=document.createElement('div');c.className='mc';
   c.innerHTML=n+'<br>';c.appendChild(meter());c.insertAdjacentHTML('beforeend','<span class="v">-- dB</span>');(i<2?$('#mi'):$('#mo')).appendChild(c)})}
-function tickMeters(){
- document.querySelectorAll('.mc').forEach((c,i)=>{const t=demo?-12-8*Math.abs(Math.sin(Date.now()/700+i)):lv[i];lvs[i]+=(t-lvs[i])*.4;
+function tickMeters(){requestAnimationFrame(tickMeters);
+ document.querySelectorAll('#mi .mc,#mo .mc').forEach((c,i)=>{const t=demo?-12-8*Math.abs(Math.sin(Date.now()/700+i)):lv[i];lvs[i]+=(t-lvs[i])*.4;
   c.querySelector('i').style.height=(100-clamp((lvs[i]+48)/48,0,1)*100)+'%';c.querySelector('.v').textContent=lvs[i]<=-59?'-- dB':lvs[i].toFixed(1)+' dB'});
- animCards();ANIM&&ANIM();requestAnimationFrame(tickMeters)}
+ animCards();ANIM&&ANIM()}
 function buildOuts(){const o=$('#co');o.innerHTML='';
  for(let i=0;i<4;i++){const c=document.createElement('div');c.className='oc';
   c.innerHTML=`<div class="h" style="background:${COL[i]}"><span>OUT ${i+1}</span><span>CH ${i+1}</span></div><div class="b"><div class="l"><b class="lb"></b><span class="ind"><s class="il">LIM</s><s class="ig">GATE</s></span><button class="mu">MUTE</button></div>
