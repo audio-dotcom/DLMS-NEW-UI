@@ -121,6 +121,7 @@ h4{margin:0 0 8px;font-size:15px}
 .fd .cap{position:absolute;left:1px;width:40px;height:24px;margin-top:-12px;top:calc(6px + (1 - var(--p))*(100% - 12px));border-radius:5px;border:1px solid #9aa7b6;background:linear-gradient(#6a7684,#2b333d 48%,#3c4652);box-shadow:0 2px 5px rgba(0,0,0,.55)}
 .fd .cap:after{content:"";position:absolute;left:4px;right:4px;top:50%;height:3px;margin-top:-1.5px;background:var(--c);border-radius:2px}
 .fd.dr .cap{border-color:#fff}
+:root{--gh:clamp(130px,24vh,200px)}.fd.g{height:var(--gh)}.gf{display:flex;justify-content:center;margin:4px 0}.gc .two{margin-top:2px}
 canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:8px;display:block}
 #gx,#gp{height:clamp(190px,34vh,300px);touch-action:none;cursor:crosshair}
 #lc{height:clamp(160px,30vh,230px)}#sc{height:130px}#spec{height:clamp(200px,48vh,420px)}
@@ -340,11 +341,13 @@ function knobDrag(el,get,put){let y0=null,v0=0;
  el.onpointerup=el.onpointercancel=()=>y0=null;el.ondblclick=()=>put(0);
  el.onwheel=e=>{e.preventDefault();put(get()+(e.deltaY<0?1:-1))}}
 function gainCtl(el,get,set){
- el.innerHTML='<div class="gv"><span class="dm">Gain</span><b></b></div><div class="gk"><button class="sm">&minus;</button><div class="kn"></div><button class="sm">+</button></div>';
- const b=$('b',el),k=$('.kn',el),[m,p]=$$('.sm',el);
- const draw=()=>{b.textContent=get().toFixed(1)+' dB';k.style.setProperty('--r',((get()+40)/46*270-135)+'deg')};
+ el.innerHTML='<div class="gv"><span class="dm">Gain</span><b></b></div><div class="gf"></div><div class="two"><button>&minus;</button><button>+</button></div>';
+ const b=$('b',el),[m,p]=$$('button',el);
  const put=v=>{v=clamp(Math.round(v),-40,6);if(v!==get())set(v);draw()};
- knobDrag(k,get,put);holdBtn(m,()=>put(get()-1));holdBtn(p,()=>put(get()+1));draw();el.redraw=draw}
+ const fd=fdr(get,put,{cls:'g',rel:1,toP:v=>(v+40)/46,fromP:q=>q*46-40,snap:v=>clamp(Math.round(v),-40,6),ticks:[6,0,-10,-20,-30,-40],lab:v=>v>0?'+'+v:v,wheel:(v,sg)=>v+sg,reset:0});
+ $('.gf',el).append(fd);
+ const draw=()=>{b.textContent=(get()>0?'+':'')+get().toFixed(1)+' dB';fd.draw()};
+ holdBtn(m,()=>put(get()-1));holdBtn(p,()=>put(get()+1));draw();el.redraw=draw}
 function stepper(get,set,fmt,step,min,max){const d=document.createElement('div');d.className='stp';
  d.innerHTML='<button>&#8249;</button><span></span><button>&#8250;</button>';const sp=d.children[1];d.up=()=>sp.textContent=fmt(get());d.up();
  [d.children[0],d.children[2]].forEach((b,i)=>holdBtn(b,()=>{set(clamp(+(get()+(i?step:-step)).toFixed(2),min,max));d.up()}));return d}
@@ -482,7 +485,7 @@ function animCards(){$$('#co .oc').forEach((c,i)=>{const l=lvs[2+i],L=S.lim[i],G
 const GC={out:[],inp:[]},DL=[];
 const lbl=(f1,f2)=>f1<=20&&f2>=20000?'Full Range':f1<=20?'Low':f2>=20000?'High':'Band';
 function buildOuts(){const o=$('#co');o.innerHTML='';
- for(let i=0;i<4;i++){const c=document.createElement('div');c.className='oc';
+ for(let i=0;i<4;i++){const c=document.createElement('div');c.className='oc';c.style.setProperty('--c',COL[i]);
   c.innerHTML=`<div class="h" style="background:${COL[i]}"><span>OUT ${i+1}</span><span class="lb"></span></div><div class="b"><div class="ind"><s class="il">LIM</s><s class="ig">GATE</s></div><div class="two"><button class="mu">MUTE</button><button class="ph">Ø Normal</button></div><div class="gc"></div><div class="dm">Delay</div><div class="dl"></div></div>`;o.appendChild(c);
   const g=$('.gc',c);gainCtl(g,()=>S.gain[i],v=>{S.gain[i]=v;send('g'+i,[2,i,...i16(v)]);save()});GC.out[i]=g;
   $('.mu',c).onclick=()=>{S.mute^=1<<(i+2);send('m',[3,S.mute]);save();renderCards()};
@@ -494,7 +497,7 @@ function renderCards(){
 
 /* ---------- INPUT & MATRIX ---------- */
 function buildInputs(){const o=$('#ci');o.innerHTML='';
- for(let i=0;i<2;i++){const c=document.createElement('div');c.className='oc';
+ for(let i=0;i<2;i++){const c=document.createElement('div');c.className='oc';c.style.setProperty('--c','#8a9bb0');
   c.innerHTML=`<div class="h" style="background:#5b6b7e"><span>IN ${i+1}</span><span>${i?'RIGHT':'LEFT'}</span></div><div class="b"><div class="two"><button class="mu">MUTE</button><button class="ph">Ø Normal</button></div><div class="gc"></div><div class="two"><button class="gl">Limiter ›</button><button class="gp">PEQ ›</button></div></div>`;o.append(c);
   const g=$('.gc',c);gainCtl(g,()=>S.ig[i],v=>{S.ig[i]=v;send('ig'+i,[2,4+i,...i16(v)]);save()});GC.inp[i]=g;
   $('.mu',c).onclick=()=>{S.mute^=1<<i;send('m',[3,S.mute]);save();renderIn()};
@@ -528,15 +531,17 @@ function dragger(id,move,up){const cv=$(id);let h=null;const pt=e=>{const r=cv.g
 const tot=(i,f)=>20*Math.log10(mag(XT[S.ht[i]],XS[S.ht[i]],S.hpf[i],f,true)*mag(XT[S.lt[i]],XS[S.lt[i]],S.lpf[i],f,false)+1e-6);
 const fp=f=>clamp(Math.log(f/20)/Math.log(1000),0,1),finv=p=>20*Math.pow(1000,p);
 const stepF=(f,d)=>{const n=Math.round(f*Math.pow(2,d/24));return clamp(n===f?f+d:n,20,20000)};
-function fader(get,put){const d=document.createElement('div');d.className='fd';
- let h='';[20,100,1000,10000,20000].forEach(f=>h+='<i style="--p:'+fp(f)+'"><u>'+(f>=1000?f/1000+'k':f)+'</u></i>');
- d.innerHTML='<div class="tk"><div class="fl"></div></div>'+h+'<div class="cap"></div>';
- const at=e=>{const r=d.getBoundingClientRect();put(nice(finv(clamp(1-(e.clientY-r.top-6)/(r.height-12),0,1))))};
- d.onpointerdown=e=>{e.preventDefault();d.setPointerCapture(e.pointerId);d.dr=1;d.classList.add('dr');at(e)};
+function fdr(get,put,o){const d=document.createElement('div');d.className='fd'+(o.cls?' '+o.cls:'');
+ let h='';o.ticks.forEach(f=>h+='<i style="--p:'+o.toP(f)+'"><u>'+o.lab(f)+'</u></i>');
+ d.innerHTML='<div class="tk"><div class="fl"></div></div>'+h+'<div class="cap"></div>';let p0=0,y0=0;
+ const at=e=>{const r=d.getBoundingClientRect(),H=r.height-12;put(o.snap(o.fromP(clamp(o.rel?p0-(e.clientY-y0)/H:1-(e.clientY-r.top-6)/H,0,1))))};
+ d.onpointerdown=e=>{e.preventDefault();d.setPointerCapture(e.pointerId);d.dr=1;d.classList.add('dr');y0=e.clientY;p0=o.toP(get());if(!o.rel)at(e)};
  d.onpointermove=e=>{if(d.dr)at(e)};
  d.onpointerup=d.onpointercancel=()=>{d.dr=0;d.classList.remove('dr')};
- d.onwheel=e=>{e.preventDefault();put(stepF(get(),e.deltaY<0?3:-3))};
- d.draw=()=>d.style.setProperty('--p',fp(get()));d.draw();return d}
+ d.onwheel=e=>{e.preventDefault();put(o.wheel(get(),e.deltaY<0?1:-1))};
+ d.ondblclick=()=>{if(o.reset!=null)put(o.reset)};
+ d.draw=()=>d.style.setProperty('--p',clamp(o.toP(get()),0,1));d.draw();return d}
+const fader=(get,put)=>fdr(get,put,{toP:fp,fromP:finv,ticks:[20,100,1000,10000,20000],lab:f=>f>=1000?f/1000+'k':f,snap:nice,wheel:(v,sg)=>stepF(v,3*sg)});
 function xSync(){XU.forEach(u=>u.forEach(e=>e.up()));xGraph()}
 function xGraph(){const cv=$('#gx');if(!cv)return;cv._h=[];graph(cv,(g,X,Y)=>{for(let i=0;i<4;i++){curve(g,X,Y,f=>tot(i,f),COL[i]);
  [[true,S.hpf[i]],[false,S.lpf[i]]].forEach(([hp,f])=>{if(hp?f<=20:f>=20000)return;const x=X(f),y=Y(clamp(tot(i,f),-24,12));cv._h.push({x,y,i,hp});
