@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="id"><head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-visual">
 <title>DLMS - YSN Audio Production</title>
 <meta name="description" content="DLMS 2 in 4 out - Digital Loudspeaker Management System by YSN Audio Production">
 <meta name="theme-color" content="#05070a">
@@ -701,7 +701,12 @@ $('#rs').onchange=()=>{S.rch=+$('#rs').value;save();syncSpec()};$('#rp').onchang
 RSRC.forEach(([n,v])=>$('#rs').add(new Option(n,v)));RPT.forEach((n,i)=>$('#rp').add(new Option(n,i)));$('#rs').value=S.rch;$('#rp').value=S.rpt;
 th_(LS.get('dlmsT','dark'));
 setInterval(()=>$('#clk').textContent=new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}),1000);
-let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{if(PAGE==='dsp')drawTab();if(PAGE==='rta')drawSpec();if(PAGE==='sys')lgDraw()},120)});
+let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{
+ /* jangan bangun ulang DOM saat mengetik (keyboard HP memicu resize -> kolom hilang & keyboard menutup); cukup gambar ulang grafik */
+ if(PAGE==='dsp'){if(tab==='x')xGraph();else if(tab==='p')pGraph()}
+ if(PAGE==='rta')drawSpec();if(PAGE==='sys')lgDraw()},120)});
+document.addEventListener('focusin',e=>{if(e.target.tagName==='INPUT'&&e.target.type==='number')setTimeout(()=>{try{e.target.select()}catch(x){}},0)});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.type==='number')e.target.blur()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!connected)armAuto()});
 buildMeters();buildOuts();buildInputs();buildPre();buildSys();tickMeters();setSt(false);
 if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
