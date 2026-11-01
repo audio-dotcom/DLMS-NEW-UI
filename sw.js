@@ -1,14 +1,19 @@
 // Service worker DLMS - cache-first untuk file statis, supaya app bisa dibuka offline.
 // Ganti angka VERSI setiap kali index.html/ikon diubah, supaya Chrome tidak memakai cache lama.
-const VERSI = 'dlms-v7';
+const VERSI = 'dlms-v8';
 const FILES = [
   './', './index.html', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png',
-  './apple-touch-icon.png', './favicon.png', './logo-wordmark.png'
+  './apple-touch-icon.png', './favicon.png', './logo-ysn.webp', './logo-ysn.png'
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSI).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // satu file gagal (mis. belum ter-upload) tidak boleh menggagalkan seluruh instalasi
+  e.waitUntil(
+    caches.open(VERSI)
+      .then(c => Promise.all(FILES.map(f => c.add(f).catch(() => {}))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', e => {
