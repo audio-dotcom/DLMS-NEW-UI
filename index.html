@@ -57,7 +57,8 @@ h4{margin:0 0 8px;font-size:15px}
 #pgs{flex:1;min-height:0;overflow:auto;padding:10px;-webkit-overflow-scrolling:touch}
 .pg{display:none}.pg.on{display:block}
 #nav{flex:none;display:flex;background:var(--p);border-top:1px solid var(--ln);padding-bottom:env(safe-area-inset-bottom)}
-#nav a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px 5px;font-size:10px;color:var(--dm);text-decoration:none;border-top:2px solid transparent;min-width:0}
+#nav{overflow-x:auto;scrollbar-width:none}#nav::-webkit-scrollbar{display:none}
+#nav a{flex:1 0 auto;min-width:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px 5px;font-size:10px;color:var(--dm);text-decoration:none;border-top:2px solid transparent;min-width:0}
 #nav a.on{color:var(--tx);border-top-color:var(--rd);background:var(--p2)}
 #nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 @media (orientation:landscape){
@@ -98,6 +99,27 @@ h4{margin:0 0 8px;font-size:15px}
 .xo{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:12px;align-items:start}
 .xb{border:1px solid;border-radius:8px;padding:6px 8px;margin-top:8px}
 .xr{display:grid;grid-template-columns:36px 1fr 88px;gap:6px;align-items:center;margin:4px 0}
+/* mixer crossover */
+:root{--fh:clamp(150px,28vh,240px)}
+.mix{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:10px;margin-top:8px}
+.xs{border:1px solid var(--c);border-radius:10px;background:var(--p2);overflow:hidden}
+.xh{display:flex;justify-content:space-between;gap:6px;padding:5px 8px;background:var(--c);color:#fff;font-weight:700;font-size:13px}
+.xh .lbx{font-weight:400;opacity:.9}
+.xf{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 6px 4px}
+.fc{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.fc>b{font-size:12px;letter-spacing:1px}
+.fc .fv{font-size:12px;font-weight:700;min-height:16px;color:var(--tx)}.fc .fv.off{color:var(--dm)}
+.fc input{text-align:center;padding:5px 2px}
+.fc .two{width:100%}.fc .two button{padding:2px 0;font-size:18px;min-height:34px}
+.xt{padding:2px 6px 8px}.xt .xr{grid-template-columns:34px 1fr;margin:5px 0}.xt select{width:100%;min-width:0;font-size:12px;padding:4px 6px;min-height:32px}
+.fd{position:relative;width:64px;height:var(--fh);touch-action:none;cursor:ns-resize;user-select:none;-webkit-user-select:none}
+.fd .tk{position:absolute;left:18px;top:6px;bottom:6px;width:6px;background:#0b0f14;border:1px solid var(--ln);border-radius:3px;overflow:hidden}
+.fd .fl{position:absolute;left:0;right:0;bottom:0;height:calc(var(--p)*100%);background:var(--c);opacity:.75}
+.fd i{position:absolute;left:0;right:0;top:calc(6px + (1 - var(--p))*(100% - 12px));height:0;border-top:1px solid var(--ln);pointer-events:none}
+.fd i u{position:absolute;left:44px;top:-6px;text-decoration:none;font-size:9px;font-style:normal;color:var(--dm)}
+.fd .cap{position:absolute;left:1px;width:40px;height:24px;margin-top:-12px;top:calc(6px + (1 - var(--p))*(100% - 12px));border-radius:5px;border:1px solid #9aa7b6;background:linear-gradient(#6a7684,#2b333d 48%,#3c4652);box-shadow:0 2px 5px rgba(0,0,0,.55)}
+.fd .cap:after{content:"";position:absolute;left:4px;right:4px;top:50%;height:3px;margin-top:-1.5px;background:var(--c);border-radius:2px}
+.fd.dr .cap{border-color:#fff}
 canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:8px;display:block}
 #gx,#gp{height:clamp(190px,34vh,300px);touch-action:none;cursor:crosshair}
 #lc{height:clamp(160px,30vh,230px)}#sc{height:130px}#spec{height:clamp(200px,48vh,420px)}
@@ -177,14 +199,9 @@ canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:
     </div>
    </section>
 
-   <!-- DSP -->
+   <!-- DSP: tiap menu (Xover, PEQ, Limiter, Gate, Test, Delay) tampil di halaman ini -->
    <section class="pg" id="p-dsp">
-    <div class="card" id="cx">
-     <div class="tabs" id="tabs">
-      <button data-t="x" class="on">Crossover</button><button data-t="p">PEQ</button><button data-t="l">Limiter</button><button data-t="n">Noise Gate</button><button data-t="g">Test Signal</button><button data-t="d">Delay</button>
-     </div>
-     <div id="tb"></div>
-    </div>
+    <div class="card" id="cx"><div id="tb"></div></div>
    </section>
 
    <!-- RTA -->
@@ -255,7 +272,12 @@ canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:
  <nav id="nav">
   <a href="#home" data-p="home" class="on"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
   <a href="#in" data-p="in"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Input</a>
-  <a href="#dsp" data-p="dsp"><svg viewBox="0 0 24 24"><path d="M2 12c3-9 5-9 7 0s4 9 7 0 3-5 6-5"/></svg>DSP</a>
+  <a href="#xo" data-p="xo"><svg viewBox="0 0 24 24"><path d="M2 7h9c4 0 4 10 11 10M2 17h4"/></svg>Xover</a>
+  <a href="#peq" data-p="peq"><svg viewBox="0 0 24 24"><path d="M2 16h6c2 0 3-10 6-10s3 10 6 10h2"/></svg>PEQ</a>
+  <a href="#lim" data-p="lim"><svg viewBox="0 0 24 24"><path d="M3 19l9-9h9M3 5h4"/></svg>Limiter</a>
+  <a href="#gate" data-p="gate"><svg viewBox="0 0 24 24"><path d="M3 18h5V6h8v12h5"/></svg>Gate</a>
+  <a href="#tst" data-p="tst"><svg viewBox="0 0 24 24"><path d="M2 12h3l2-6 4 12 3-9 2 3h6"/></svg>Test</a>
+  <a href="#dly" data-p="dly"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 8v5l3 2M9 2h6"/></svg>Delay</a>
   <a href="#rta" data-p="rta"><svg viewBox="0 0 24 24"><path d="M5 20V10M10 20V4M15 20v-8M20 20V8"/></svg>RTA</a>
   <a href="#pre" data-p="pre"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Preset</a>
   <a href="#sys" data-p="sys"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Sistem</a>
@@ -273,9 +295,11 @@ const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:v}catch(
 const SS={get(k){try{return sessionStorage.getItem(k)}catch(e){return null}},set(k,v){try{sessionStorage.setItem(k,v)}catch(e){}}};
 const U={S:'4fafc201-1fb5-459e-8fcc-c5c9c331914b',C:'beb5483e-36e1-4688-b7f5-ea07361b26a8',T:'beb5483e-36e1-4688-b7f5-ea07361b26a9',R:'beb5483e-36e1-4688-b7f5-ea07361b26aa',P:'beb5483e-36e1-4688-b7f5-ea07361b26ac',G:'beb5483e-36e1-4688-b7f5-ea07361b26ab'};
 const FQ=[20,22,25,28,32,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500,16000,20000];
+const DSPMAP={xo:'x',peq:'p',lim:'l',gate:'n',tst:'g',dly:'d'};
 const XM=[[2,0,3],[4,1,5],[6,7,8]],XT=[0,1,0,0,1,1,2,2,2],XS=[1,1,0,2,0,2,0,1,2];
 const XNAME=['Linkwitz-Riley 24','Butterworth 24','Linkwitz-Riley 12','Linkwitz-Riley 48','Butterworth 12','Butterworth 48','Bessel 12','Bessel 24','Bessel 48'];
 const MORD=[2,0,3,4,1,5,6,7,8];
+const XSH=['LR 24','BW 24','LR 12','LR 48','BW 12','BW 48','Bessel 12','Bessel 24','Bessel 48'];
 const COL=['#1e78ff','#1fa35a','#f06a10','#9a38e8'];
 const CHN=['OUT 1','OUT 2','OUT 3','OUT 4','IN 1','IN 2'];
 const ROUTE=['LEFT','RIGHT','MIX L+R'];
@@ -326,7 +350,7 @@ function stepper(get,set,fmt,step,min,max){const d=document.createElement('div')
 function num(val,min,max,step,cb){const i=document.createElement('input');i.type='number';i.inputMode='decimal';i.min=min;i.max=max;i.step=step;i.value=val;
  i.onchange=()=>{let v=parseFloat(String(i.value).replace(',','.'));if(isNaN(v))v=val;cb(clamp(v,min,max))};return i}
 function sel(opts,val,cb){const s=document.createElement('select');opts.forEach((o,i)=>s.add(new Option(o,i)));s.value=val;s.onchange=()=>cb(+s.value);return s}
-function modeSel(val,cb){const s=document.createElement('select');if(val<0)s.add(new Option('Pilih…',-1));MORD.forEach(m=>s.add(new Option(XNAME[m],m)));s.value=val;s.onchange=()=>{if(+s.value>=0)cb(+s.value)};return s}
+function modeSel(val,cb){const s=document.createElement('select');if(val<0)s.add(new Option('Pilih…',-1));MORD.forEach(m=>s.add(new Option(XSH[m],m)));s.value=val;s.onchange=()=>{if(+s.value>=0)cb(+s.value)};return s}
 function row(l,min,max,step,val,fmt,cb){const d=document.createElement('div');d.className='sl';d.innerHTML=`<span>${l}</span><input type=range min=${min} max=${max} step=${step} value=${val}><b></b>`;
  const i=d.children[1],b=d.children[2];b.textContent=fmt(+i.value);i.oninput=()=>{b.textContent=fmt(+i.value);cb(+i.value)};return d}
 
@@ -474,8 +498,8 @@ function buildInputs(){const o=$('#ci');o.innerHTML='';
   const g=$('.gc',c);gainCtl(g,()=>S.ig[i],v=>{S.ig[i]=v;send('ig'+i,[2,4+i,...i16(v)]);save()});GC.inp[i]=g;
   $('.mu',c).onclick=()=>{S.mute^=1<<i;send('m',[3,S.mute]);save();renderIn()};
   $('.ph',c).onclick=()=>{S.phase^=1<<(4+i);send('ph',[0x0F,S.phase]);save();renderIn()};
-  $('.gl',c).onclick=()=>{S.ch=4+i;tab='l';S.tab='l';save();go('dsp')};
-  $('.gp',c).onclick=()=>{S.ch=4+i;tab='p';S.tab='p';save();go('dsp')}}
+  $('.gl',c).onclick=()=>{S.ch=4+i;save();go('lim')};
+  $('.gp',c).onclick=()=>{S.ch=4+i;save();go('peq')}}
  const mx=$('#mx');mx.innerHTML='';
  for(let i=0;i<4;i++){const r=document.createElement('div');r.style.margin='8px 0';r.innerHTML=`<div style="color:${COL[i]};font-weight:700;margin-bottom:4px">OUT ${i+1}</div><div class="seg"></div>`;
   ROUTE.forEach((n,v)=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>{S.route[i]=v;send('r'+i,[1,i,v]);save();renderIn()};$('.seg',r).append(b)});mx.append(r)}}
@@ -494,30 +518,52 @@ function graph(cv,fn){const dpr=devicePixelRatio||1,w=cv.clientWidth,h=cv.client
  fn(g,X,Y,w)}
 function curve(g,X,Y,fnDb,col){g.strokeStyle=col;g.lineWidth=2;g.beginPath();for(let k=0;k<=160;k++){const f=20*Math.pow(1000,k/160),d=clamp(fnDb(f),-24,12);k?g.lineTo(X(f),Y(d)):g.moveTo(X(f),Y(d))}g.stroke()}
 const nearest=v=>FQ.reduce((a,f,i)=>Math.abs(Math.log(f/v))<Math.abs(Math.log(FQ[a]/v))?i:a,0);
-const XI=[],XL=[],P={inp:[]};
+const XU=[],P={inp:[]};
 const nice=f=>clamp(Math.round(f<100?f:f<1000?Math.round(f/5)*5:Math.round(f/50)*50),20,20000);
 function dragger(id,move,up){const cv=$(id);let h=null;const pt=e=>{const r=cv.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
  cv.onpointerdown=e=>{const[x,y]=pt(e);let best=null,bd=26;(cv._h||[]).forEach(o=>{const d=Math.hypot(o.x-x,o.y-y);if(d<bd){bd=d;best=o}});if(best){h=best;cv.setPointerCapture(e.pointerId)}};
  cv.onpointermove=e=>{if(!h)return;const[x,y]=pt(e);move(h,20*Math.pow(1000,clamp((x-25)/(cv.clientWidth-30),0,1)),12-(y-4)/(cv.clientHeight-20)*36)};
  cv.onpointerup=cv.onpointercancel=()=>{if(h){h=null;up&&up()}}}
 const tot=(i,f)=>20*Math.log10(mag(XT[S.ht[i]],XS[S.ht[i]],S.hpf[i],f,true)*mag(XT[S.lt[i]],XS[S.lt[i]],S.lpf[i],f,false)+1e-6);
+const fp=f=>clamp(Math.log(f/20)/Math.log(1000),0,1),finv=p=>20*Math.pow(1000,p);
+const stepF=(f,d)=>{const n=Math.round(f*Math.pow(2,d/24));return clamp(n===f?f+d:n,20,20000)};
+function fader(get,put){const d=document.createElement('div');d.className='fd';
+ let h='';[20,100,1000,10000,20000].forEach(f=>h+='<i style="--p:'+fp(f)+'"><u>'+(f>=1000?f/1000+'k':f)+'</u></i>');
+ d.innerHTML='<div class="tk"><div class="fl"></div></div>'+h+'<div class="cap"></div>';
+ const at=e=>{const r=d.getBoundingClientRect();put(nice(finv(clamp(1-(e.clientY-r.top-6)/(r.height-12),0,1))))};
+ d.onpointerdown=e=>{e.preventDefault();d.setPointerCapture(e.pointerId);d.dr=1;d.classList.add('dr');at(e)};
+ d.onpointermove=e=>{if(d.dr)at(e)};
+ d.onpointerup=d.onpointercancel=()=>{d.dr=0;d.classList.remove('dr')};
+ d.onwheel=e=>{e.preventDefault();put(stepF(get(),e.deltaY<0?3:-3))};
+ d.draw=()=>d.style.setProperty('--p',fp(get()));d.draw();return d}
+function xSync(){XU.forEach(u=>u.forEach(e=>e.up()));xGraph()}
 function xGraph(){const cv=$('#gx');if(!cv)return;cv._h=[];graph(cv,(g,X,Y)=>{for(let i=0;i<4;i++){curve(g,X,Y,f=>tot(i,f),COL[i]);
  [[true,S.hpf[i]],[false,S.lpf[i]]].forEach(([hp,f])=>{if(hp?f<=20:f>=20000)return;const x=X(f),y=Y(clamp(tot(i,f),-24,12));cv._h.push({x,y,i,hp});
   g.fillStyle=COL[i];g.strokeStyle='#fff';g.lineWidth=2;g.beginPath();g.arc(x,y,7,0,7);g.fill();g.stroke()})}})}
 function pGraph(){const c=S.ch,cv=$('#gp');if(!cv)return;cv._h=[];graph(cv,(g,X,Y)=>{curve(g,X,Y,f=>peqDb(c,f),c<4?COL[c]:'#e33');
  S.peq[c].forEach((k,n)=>{const x=X(FQ[k.f]),y=Y(clamp(k.g/10,-24,12));cv._h.push({x,y,n});g.fillStyle='#fff';g.beginPath();g.arc(x,y,6,0,7);g.fill();g.fillStyle='#7d8da0';g.fillText(n+1,x-3,y-9)})})}
-function drawTab(){ANIM=null;const tb=$('#tb');$$('#tabs button').forEach(b=>b.className=b.dataset.t===tab?'on':'');tb.innerHTML='';
- if(tab==='x'){tb.innerHTML='<div class="xo"><div><canvas id="gx"></canvas><div class="dm" style="margin-top:4px">Seret titik di grafik, atau ketik frekuensi 20–20000 Hz. HPF 20 = off, LPF 20000 = off.</div></div><div id="xc"></div></div>';
-  const xc=$('#xc'),all=document.createElement('div');all.className='l';all.innerHTML='<span class="dm">Mode semua output</span>';
-  all.append(modeSel(-1,m=>{for(let i=0;i<4;i++){S.ht[i]=S.lt[i]=m;send('xh'+i,[0x0D,i,0,m]);send('xl'+i,[0x0D,i,1,m])}save();drawTab()}));xc.append(all);
-  for(let i=0;i<4;i++){const d=document.createElement('div');d.className='xb';d.style.borderColor=COL[i];d.innerHTML=`<b style="color:${COL[i]}">OUT ${i+1} <span class="lbx dm"></span></b>`;
-   XL[i]=$('.lbx',d);const upd=()=>XL[i].textContent='('+lbl(S.hpf[i],S.lpf[i])+')';upd();
-   [['HPF',true],['LPF',false]].forEach(([nm,hp])=>{const r=document.createElement('div');r.className='xr';r.innerHTML=`<span>${nm}</span>`;
-    const f=num(hp?S.hpf[i]:S.lpf[i],20,20000,1,v=>{v=Math.round(v);if(hp)S.hpf[i]=v;else S.lpf[i]=v;f.value=v;send((hp?'h':'l')+i,[hp?4:5,i,...i16(v)]);save();upd();renderCards();xGraph()});XI[i*2+(hp?0:1)]=f;
+function drawTab(){ANIM=null;XU.length=0;const tb=$('#tb');tb.innerHTML='';
+ if(tab==='x'){
+  tb.innerHTML='<canvas id="gx"></canvas><div class="dm" style="margin:4px 0 8px">Geser fader seperti mixer digital, seret titik di grafik, tekan − / + untuk geser halus, atau ketik frekuensi 20–20000 Hz. HPF 20 = off, LPF 20000 = off.</div><div class="l" id="xall"><span class="dm">Tipe filter semua output <small>(LR = Linkwitz-Riley, BW = Butterworth)</small></span></div><div class="mix" id="mix"></div>';
+  $('#xall').append(modeSel(-1,m=>{for(let i=0;i<4;i++){S.ht[i]=S.lt[i]=m;send('xh'+i,[0x0D,i,0,m]);send('xl'+i,[0x0D,i,1,m])}save();drawTab()}));
+  const setF=(i,hp,v)=>{v=clamp(Math.round(v),20,20000);if(hp)S.hpf[i]=v;else S.lpf[i]=v;send((hp?'h':'l')+i,[hp?4:5,i,...i16(v)]);save();XU[i]&&XU[i].forEach(e=>e.up());renderCards();xGraph()};
+  for(let i=0;i<4;i++){
+   const d=document.createElement('div');d.className='xs';d.style.setProperty('--c',COL[i]);
+   d.innerHTML='<div class="xh"><span>OUT '+(i+1)+'</span><span class="lbx"></span></div><div class="xf"></div><div class="xt"></div>';
+   const lb=$('.lbx',d),xf=$('.xf',d),xt=$('.xt',d);XU[i]=[];
+   [['HPF',true],['LPF',false]].forEach(([nm,hp])=>{
+    const get=()=>hp?S.hpf[i]:S.lpf[i],off=()=>hp?get()<=20:get()>=20000;
+    const c=document.createElement('div');c.className='fc';c.innerHTML='<b>'+nm+'</b><span class="fv"></span>';
+    const fv=$('.fv',c),fd=fader(get,v=>setF(i,hp,v)),inp=num(get(),20,20000,1,v=>setF(i,hp,v));
+    const bs=document.createElement('div');bs.className='two';bs.innerHTML='<button>&minus;</button><button>+</button>';
+    holdBtn(bs.children[0],()=>setF(i,hp,stepF(get(),-1)));holdBtn(bs.children[1],()=>setF(i,hp,stepF(get(),1)));
+    c.append(fd,inp,bs);xf.append(c);
     const m=modeSel(hp?S.ht[i]:S.lt[i],mm=>{if(hp)S.ht[i]=mm;else S.lt[i]=mm;send((hp?'xh':'xl')+i,[0x0D,i,hp?0:1,mm]);save();xGraph()});
-    r.append(m,f);d.append(r)});xc.append(d)}
-  xGraph();dragger('#gx',(h,f)=>{f=nice(f);const i=h.i;if(h.hp)S.hpf[i]=f;else S.lpf[i]=f;XI[i*2+(h.hp?0:1)].value=f;
-   send((h.hp?'h':'l')+i,[h.hp?4:5,i,...i16(f)]);XL[i].textContent='('+lbl(S.hpf[i],S.lpf[i])+')';renderCards();xGraph()},save)}
+    const r=document.createElement('div');r.className='xr';r.innerHTML='<span class="dm">'+nm+'</span>';r.append(m);xt.append(r);
+    c.insertBefore(fv,fd);
+    XU[i].push({up(){fd.draw();fv.textContent=off()?'OFF':fh(get());fv.className='fv'+(off()?' off':'');if(document.activeElement!==inp)inp.value=get();m.value=hp?S.ht[i]:S.lt[i];lb.textContent='('+lbl(S.hpf[i],S.lpf[i])+')'}})});
+   $('#mix').append(d);XU[i].forEach(e=>e.up())}
+  xGraph();dragger('#gx',(h,f)=>setF(h.i,h.hp,nice(f)),save)}
  else if(tab==='p'){const c=S.ch;
   tb.innerHTML='<div class="tabs"></div><canvas id="gp"></canvas><div class="pq h" style="margin-top:8px"><span>#</span><span>Freq (Hz)</span><span>Gain (dB)</span><span>Q</span></div><div id="pr"></div>';
   const rs=document.createElement('button');rs.textContent='Reset flat';
@@ -674,16 +720,16 @@ $('#lbt').onclick=async()=>{if(!navigator.bluetooth){$('#lmsg').textContent='Bro
 function lockApp(){LOCK=true;SS.set('dlmsOk','');try{dev&&dev.gatt.disconnect()}catch(e){}$('#app').hidden=true;showLogin()}
 
 /* ---------- navigasi & alur masuk ---------- */
-const TTL={home:'Home',in:'Input & Matrix',dsp:'DSP',rta:'RTA',pre:'Preset',sys:'Sistem'};
-function go(p){PAGE=p;S.page=p;$$('.pg').forEach(x=>x.classList.toggle('on',x.id==='p-'+p));$$('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
+const TTL={home:'Home',in:'Input & Matrix',xo:'Crossover',peq:'PEQ',lim:'Limiter',gate:'Noise Gate',tst:'Test Signal',dly:'Delay',rta:'RTA',pre:'Preset',sys:'Sistem'};
+function go(p){const d=DSPMAP[p];if(d){tab=d;S.tab=d;PAGE='dsp'}else PAGE=p;S.page=p;
+ $$('.pg').forEach(x=>x.classList.toggle('on',x.id==='p-'+PAGE));$$('#nav a').forEach(a=>{const on=a.dataset.p===p;a.classList.toggle('on',on);if(on)try{a.scrollIntoView({block:'nearest',inline:'center'})}catch(e){}});
  $('#ttl').textContent=TTL[p]||p;$('#pgs').scrollTop=0;
- if(p==='dsp')drawTab();else ANIM=null;
+ if(PAGE==='dsp')drawTab();else ANIM=null;
  if(p==='rta'){drawSpec();syncSpec()}
  if(p==='in')renderIn();if(p==='home')renderCards();if(p==='sys'){renderSys();lgDraw()}}
 $$('#nav a').forEach(a=>a.onclick=e=>{e.preventDefault();go(a.dataset.p)});
-$$('#tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;S.tab=tab;save();drawTab()});
-function renderAll(){renderCards();renderIn();renderSys();if(PAGE==='dsp')drawTab()}
-function enterApp(){$('#splash').hidden=true;$('#login').hidden=true;$('#app').hidden=false;go(PAGE&&PAGE!=='sys'?PAGE:'home');renderAll()}
+function renderAll(){renderCards();renderIn();renderSys();if(PAGE==='dsp'){if(tab==='x'&&XU.length)xSync();else drawTab()}}
+function enterApp(){$('#splash').hidden=true;$('#login').hidden=true;$('#app').hidden=false;go('home');renderAll()}
 function showLogin(){$('#splash').hidden=true;$('#login').hidden=false;
  $('#lwait').textContent=arm||autoOn()&&LS.get('dlmsId','')?'Menunggu DLMS terdeteksi… (otomatis masuk)':'';setTimeout(()=>{try{$('#pw').focus()}catch(e){}},100)}
 async function boot(){
