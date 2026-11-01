@@ -40,6 +40,7 @@ h4{margin:0 0 8px;font-size:15px}
 #lf{width:min(92vw,340px);display:grid;gap:10px}
 #lf h2{margin:0;text-align:center;font-size:18px;letter-spacing:1px}
 .pw{display:flex;gap:6px}.pw input{flex:1}
+.ent{padding:14px 10px;font-size:16px;letter-spacing:2px;animation:blink 1.6s ease-in-out infinite}@keyframes blink{50%{opacity:.6}}
 .msg{min-height:18px;text-align:center;font-size:13px;color:#ff8d94}
 .or{text-align:center;color:#7d8da0;font-size:12px}
 @media (orientation:landscape){#login{flex-direction:row;gap:36px}#login .lg{width:min(44vw,70vh,380px)}}
@@ -159,10 +160,10 @@ canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:
 <div id="login" class="scr" hidden>
  <img class="lg" src="logo-ysn.webp" alt="YSN Audio Production">
  <form id="lf" autocomplete="off">
-  <h2>MASUK APLIKASI</h2>
-  <div class="pw"><input id="pw" type="password" placeholder="Password aplikasi" autocomplete="off" enterkeyhint="go"><button type="button" id="pwe">Lihat</button></div>
+  <h2>DLMS 2 IN 4 OUT</h2>
+  <div class="pw" id="pwrow" hidden><input id="pw" type="password" placeholder="Password aplikasi" autocomplete="off" enterkeyhint="go"><button type="button" id="pwe">Lihat</button></div>
   <div class="msg" id="lmsg"></div>
-  <button class="pri" type="submit">Masuk</button>
+  <button class="pri ent" type="submit" id="lenter">TEKAN UNTUK MASUK</button>
   <div class="or">atau</div>
   <button type="button" id="lbt">Hubungkan DLMS (Bluetooth)</button>
   <div class="dm" id="lwait" style="text-align:center;min-height:16px"></div>
@@ -257,11 +258,11 @@ canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:
       <div class="card"><h4>Aplikasi</h4>
        <div class="field"><span>Tema tampilan</span><button id="tha">Dark</button></div>
        <div class="field"><span>Mode demo (meter animasi)</span><input type="checkbox" id="dmo"></div>
-       <div class="field col"><span class="dm">Ganti password aplikasi <b id="pwd" style="color:#e6a100"></b></span>
-        <input type="password" id="pw0" placeholder="Password lama" autocomplete="off">
+       <div class="field col"><span class="dm">Password aplikasi <b id="pwd" style="color:#e6a100"></b><br>Kosong = langsung masuk dengan tombol "Tekan untuk masuk". Jika diset, password diminta di layar awal.</span>
+        <input type="password" id="pw0" placeholder="Password lama" autocomplete="off" hidden>
         <input type="password" id="pw1" placeholder="Password baru (min. 4 karakter)" autocomplete="off">
-        <button id="pws">Simpan password</button></div>
-       <button id="lock" style="width:100%">Kunci aplikasi</button>
+        <div class="two"><button id="pws">Simpan password</button><button id="pwx" class="dgr">Hapus password</button></div></div>
+       <button id="lock" style="width:100%">Kunci aplikasi (kembali ke layar masuk)</button>
       </div>
      </div>
     </div>
@@ -462,7 +463,7 @@ async function armAuto(){
  }else go();
  return 'armed'}
 const waitConnected=ms=>new Promise(r=>{const t0=Date.now();(function c(){if(connected)r(true);else if(Date.now()-t0>ms)r(false);else setTimeout(c,150)})()});
-function onConnected(){if(LOCK)return;if($('#app').hidden)enterApp();renderAll()}
+function onConnected(){if(LOCK||needPw())return;if($('#app').hidden)enterApp();renderAll()}
 
 /* ---------- status & level (tampilan) ---------- */
 const MT=[];
@@ -640,8 +641,7 @@ function renderSys(){
  const sb=$('#sb');if(INFO.ok)sb.value=String(INFO.idle);
  $$('#th button').forEach((b,i)=>b.className=INFO.theme===i?'on':'');
  const lg=x=>x?'kustom':'bawaan';$('#lgi').textContent=INFO.ok?`Logo di alat: boot = ${lg(INFO.lb)}, standby = ${lg(INFO.ls)}${INFO.fs?'':'  • penyimpanan logo belum siap'}`:'Hubungkan alat untuk mengirim logo.';
- $('#dmo').checked=demo;$('#aut').checked=LS.get('dlmsAuto','1')==='1';$('#nobt').hidden=!!navigator.bluetooth;
- PW.get().then(o=>$('#pwd').textContent=o.d?'• masih default':'')}
+ $('#dmo').checked=demo;$('#aut').checked=LS.get('dlmsAuto','1')==='1';$('#nobt').hidden=!!navigator.bluetooth;const hp=PW.has();$('#pwd').textContent=hp?'• aktif':'• belum diset';$('#pw0').hidden=!hp;$('#pwx').hidden=!hp}
 function buildSys(){
  const sb=$('#sb');STBY.forEach(v=>sb.add(new Option(v?(v>=60?v/60+' menit':v+' detik'):'Nonaktif',v)));
  sb.onchange=async()=>{const v=+sb.value;try{const r=await gcmd([0x16,...i16(v)]);toast(r[1]===0?'Standby disimpan':ERR[r[1]]||'Gagal')}catch(e){toast(e.message)}};
@@ -662,7 +662,8 @@ function buildSys(){
  $('#dmo').onchange=e=>demo=e.target.checked;
  $('#tha').onclick=()=>th_(document.documentElement.dataset.t==='light'?'dark':'light');
  $('#lock').onclick=lockApp;
- $('#pws').onclick=async()=>{const a=$('#pw0').value,b=$('#pw1').value;if(!await PW.check(a))return toast('Password lama salah');if(b.length<4)return toast('Password baru min. 4 karakter');await PW.set(b);$('#pw0').value=$('#pw1').value='';renderSys();toast('Password aplikasi diganti')};
+ $('#pws').onclick=async()=>{const b=$('#pw1').value;if(PW.has()&&!await PW.check($('#pw0').value))return toast('Password lama salah');if(b.length<4)return toast('Password baru min. 4 karakter');await PW.set(b);$('#pw0').value=$('#pw1').value='';renderSys();toast('Password diset – diminta di layar awal')};
+ $('#pwx').onclick=async()=>{if(!await PW.check($('#pw0').value))return toast('Isi password lama dulu');PW.clear();$('#pw0').value=$('#pw1').value='';renderSys();toast('Password dihapus – langsung masuk')};
  buildLogo()}
 const th_=t=>{document.documentElement.dataset.t=t;LS.set('dlmsT',t);$('#tha').textContent=t==='light'?'Light':'Dark';$('meta[name=theme-color]').content=t==='light'?'#e9eef4':'#05070a';drawTab();drawSpec()};
 
@@ -705,18 +706,23 @@ function buildLogo(){
 /* ---------- PASSWORD APLIKASI ---------- */
 const PW={
  async hash(p,s){const b=new TextEncoder().encode(s+':'+p);if(window.crypto&&crypto.subtle){const h=await crypto.subtle.digest('SHA-256',b);return[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}let h=5381;for(const c of b)h=((h<<5)+h+c)>>>0;return'x'+h.toString(16)},
- async get(){let o=null;try{o=JSON.parse(LS.get('dlmsPW',''))}catch(e){}
-  if(!o||!o.h){const s=Math.random().toString(36).slice(2);o={s,h:await this.hash('ysn123',s),d:1};LS.set('dlmsPW',JSON.stringify(o))}return o},
- async check(p){const o=await this.get();return await this.hash(p,o.s)===o.h},
- async set(p){const s=Math.random().toString(36).slice(2);LS.set('dlmsPW',JSON.stringify({s,h:await this.hash(p,s)}))}};
+ o(){try{const o=JSON.parse(LS.get('dlmsPW2',''));return o&&o.h?o:null}catch(e){return null}},
+ has(){return !!this.o()},
+ async check(p){const o=this.o();return !o||await this.hash(p,o.s)===o.h},
+ async set(p){const s=Math.random().toString(36).slice(2);LS.set('dlmsPW2',JSON.stringify({s,h:await this.hash(p,s)}))},
+ clear(){LS.del('dlmsPW2')}};
+const needPw=()=>PW.has()&&SS.get('dlmsOk')!=='1';
+function loginUI(){const h=PW.has();$('#pwrow').hidden=!h;$('#lenter').textContent=h?'MASUK':'TEKAN UNTUK MASUK';$('#lenter').classList.toggle('ent',!h);$('#lmsg').textContent=''}
 let fails=0,lockUntil=0;
 $('#lf').onsubmit=async e=>{e.preventDefault();const m=$('#lmsg'),now=Date.now();
- if(now<lockUntil){m.textContent='Terlalu banyak percobaan. Tunggu '+Math.ceil((lockUntil-now)/1000)+' detik.';return}
- if(await PW.check($('#pw').value)){fails=0;m.textContent='';$('#pw').value='';LOCK=false;SS.set('dlmsOk','1');enterApp();armAuto()}
- else{fails++;$('#pw').value='';if(fails>=5){fails=0;lockUntil=Date.now()+30000;m.textContent='Terlalu banyak percobaan. Tunggu 30 detik.'}else m.textContent='Password salah.'}};
+ if(PW.has()){
+  if(now<lockUntil){m.textContent='Terlalu banyak percobaan. Tunggu '+Math.ceil((lockUntil-now)/1000)+' detik.';return}
+  if(!await PW.check($('#pw').value)){fails++;$('#pw').value='';if(fails>=5){fails=0;lockUntil=Date.now()+30000;m.textContent='Terlalu banyak percobaan. Tunggu 30 detik.'}else m.textContent='Password salah.';return}
+ }
+ fails=0;m.textContent='';$('#pw').value='';LOCK=false;SS.set('dlmsOk','1');enterApp();armAuto()};
 $('#pwe').onclick=()=>{const i=$('#pw');i.type=i.type==='password'?'text':'password';$('#pwe').textContent=i.type==='password'?'Lihat':'Sembunyi'};
 $('#lbt').onclick=async()=>{if(!navigator.bluetooth){$('#lmsg').textContent='Browser ini tidak mendukung Web Bluetooth. Pakai Chrome di Android / PC.';return}
- LOCK=false;const ok=await connect(true);if(ok)enterApp()};
+ LOCK=false;const ok=await connect(true);if(ok&&!needPw())enterApp()};
 function lockApp(){LOCK=true;SS.set('dlmsOk','');try{dev&&dev.gatt.disconnect()}catch(e){}$('#app').hidden=true;showLogin()}
 
 /* ---------- navigasi & alur masuk ---------- */
@@ -730,14 +736,14 @@ function go(p){const d=DSPMAP[p];if(d){tab=d;S.tab=d;PAGE='dsp'}else PAGE=p;S.pa
 $$('#nav a').forEach(a=>a.onclick=e=>{e.preventDefault();go(a.dataset.p)});
 function renderAll(){renderCards();renderIn();renderSys();if(PAGE==='dsp'){if(tab==='x'&&XU.length)xSync();else drawTab()}}
 function enterApp(){$('#splash').hidden=true;$('#login').hidden=true;$('#app').hidden=false;go('home');renderAll()}
-function showLogin(){$('#splash').hidden=true;$('#login').hidden=false;
- $('#lwait').textContent=arm||autoOn()&&LS.get('dlmsId','')?'Menunggu DLMS terdeteksi… (otomatis masuk)':'';setTimeout(()=>{try{$('#pw').focus()}catch(e){}},100)}
+function showLogin(){$('#splash').hidden=true;$('#login').hidden=false;loginUI();
+ $('#lwait').textContent=arm||autoOn()&&LS.get('dlmsId','')?'Menunggu DLMS terdeteksi… (otomatis masuk)':'';setTimeout(()=>{try{(PW.has()?$('#pw'):$('#lenter')).focus()}catch(e){}},100)}
 async function boot(){
  const t0=Date.now();let st='skip';
  if(autoOn())st=await armAuto();
  if(st==='armed'){$('#sptx').textContent='MENCARI DLMS…';await waitConnected(3200)}
  const rest=1900-(Date.now()-t0);if(rest>0)await wait(rest);
- if(connected||SS.get('dlmsOk')==='1')enterApp();else showLogin()}
+ if((connected&&!PW.has())||SS.get('dlmsOk')==='1')enterApp();else showLogin()}
 
 /* ---------- start ---------- */
 $('#bc').onclick=$('#bc2').onclick=$('#bc3').onclick=()=>{if(dev&&dev.gatt.connected){dev.gatt.disconnect()}else if(!navigator.bluetooth)modal({title:'Tidak didukung',msg:'Browser ini tidak mendukung Web Bluetooth. Pakai Chrome di Android / PC.',cancel:false});else connect(true)};
