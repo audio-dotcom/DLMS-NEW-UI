@@ -124,7 +124,7 @@ h4{margin:0 0 8px;font-size:15px}
 :root{--gh:clamp(130px,24vh,200px)}.fd.g{height:var(--gh)}.gf{display:flex;justify-content:center;margin:4px 0}.gc .two{margin-top:2px}
 canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:8px;display:block}
 #gx,#gp{height:clamp(190px,34vh,300px);touch-action:none;cursor:crosshair}
-#lc{height:clamp(160px,30vh,230px)}#sc{height:130px}#spec{height:clamp(200px,48vh,420px)}
+#lc{height:clamp(160px,30vh,230px)}#sc{height:130px}#spec{height:clamp(200px,48vh,420px)}#isp{height:clamp(150px,26vh,220px)}
 .sl{display:grid;grid-template-columns:84px 1fr 96px;gap:8px;align-items:center;margin:6px 0}.sl b{font-size:13px;text-align:right}
 .pq{display:grid;grid-template-columns:28px 1fr 1fr 1fr;gap:6px;align-items:center;margin:4px 0}.pq.h{color:var(--dm);font-size:12px}
 .led{padding:2px 10px;border-radius:10px;font-size:12px;font-weight:700;background:#2a3038;color:#9aa}.led.o{background:#1f9d55;color:#fff;box-shadow:0 0 10px #2ecc71}.led.c{background:#8a1a22;color:#fff}
@@ -195,6 +195,8 @@ canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:
    <section class="pg" id="p-in">
     <div class="g g2">
      <div>
+      <div class="card"><div class="l"><h4 style="margin:0">Spektrum input</h4><div class="seg" id="isel" style="width:140px"><button>IN 1</button><button>IN 2</button></div></div>
+       <canvas id="isp" style="margin-top:8px"></canvas><div class="dm" style="margin-top:4px">Bar live dari alat, sebelum crossover (32 pita, 20 Hz &ndash; 20 kHz). Garis putih = peak hold.</div></div>
       <div class="outs" id="ci"></div>
      </div>
      <div class="card"><h4>Matrix &mdash; sumber tiap output</h4><div id="mx"></div></div>
@@ -231,9 +233,12 @@ canvas{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:
      <div>
       <div class="card"><h4>Koneksi</h4>
        <div class="field"><span>Status</span><b id="sst">-</b></div>
-       <div class="field"><span>Versi aplikasi</span><span>v2.0.0</span></div>
+       <div class="field"><span>Versi aplikasi</span><span>v2.1.0</span></div>
        <div class="field"><span>Sambung otomatis &amp; langsung masuk</span><input type="checkbox" id="aut"></div>
-       <div class="two"><button id="bc3">Hubungkan</button><button id="sy" class="needs">Sinkron ulang ke alat</button></div>
+       <button id="bc3" style="width:100%">Hubungkan</button>
+       <div class="two" style="margin-top:6px"><button id="sp" class="needs">Ambil dari alat</button><button id="sy" class="needs">Kirim ke alat</button></div>
+       <div class="dm" id="stw" hidden style="margin-top:6px;color:#e6a100"></div>
+       <div class="dm" style="margin-top:6px"><b>Ambil dari alat</b> = tampilan mengikuti setingan DLMS (otomatis juga tiap sambung &amp; tiap beberapa detik). <b>Kirim ke alat</b> = setingan di aplikasi ditulis ulang ke alat. PEQ &amp; Delay belum dikirim balik oleh alat, jadi tampilannya memakai data terakhir di aplikasi.</div>
        <div class="dm" id="nobt" hidden style="margin-top:6px">Browser ini tidak mendukung Web Bluetooth. Pakai Chrome di Android / PC.</div>
       </div>
       <div class="card needs"><h4>Alat DLMS</h4>
@@ -359,55 +364,130 @@ function row(l,min,max,step,val,fmt,cb){const d=document.createElement('div');d.
  const i=d.children[1],b=d.children[2];b.textContent=fmt(+i.value);i.oninput=()=>{b.textContent=fmt(+i.value);cb(+i.value)};return d}
 
 /* ---------- BLE ---------- */
-let ch={},dev=null,q=new Map(),busy=false,specOn=false,demo=false,connecting=false,connected=false,LOCK=false;
+let ch={},dev=null,q=new Map(),busy=false,gen=0,failCnt=0,specOn=false,demo=false,connecting=false,connected=false,LOCK=false,manual=false,dirty=false;
+let lastRx=0,lastSend=0,lastPoll=0,OPBUSY=0,hbBusy=false,hbFail=0,NOTE='',NOTEBAD=false,needRender=false;
 const GW=[];const rmW=w=>{const i=GW.indexOf(w);i>=0&&GW.splice(i,1)};
 const wr=(c,d)=>c.writeValueWithResponse?c.writeValueWithResponse(d):c.writeValue(d);
-function send(key,bytes){q.set(key,bytes);if(!busy)pump()}
-async function pump(){busy=true;while(q.size){const[k,b]=q.entries().next().value;q.delete(k);
- if(ch.C&&dev&&dev.gatt.connected){try{const d=new Uint8Array(b);ch.C.writeValueWithoutResponse?await ch.C.writeValueWithoutResponse(d):await ch.C.writeValue(d)}catch(e){}}
- await wait(25)}busy=false}
+/* Semua operasi GATT (kontrol, perintah, minta status) diantre SATU-SATU dan diberi batas waktu.
+   Sebelumnya tulis kontrol & perintah bisa bertabrakan ("GATT operation already in progress"), error ditelan,
+   dan satu tulis yang macet menahan semua tulis berikutnya -> tampak "terhubung" tapi setingan tidak sampai. */
+let gq=Promise.resolve();
+function gio(fn,ms=3000){
+ const run=()=>new Promise((res,rej)=>{let done=false;const t=setTimeout(()=>{if(!done){done=true;const e=new Error('Bluetooth lambat / macet');e.timeout=true;rej(e)}},ms);
+  Promise.resolve().then(fn).then(v=>{if(!done){done=true;clearTimeout(t);res(v)}},e=>{if(!done){done=true;clearTimeout(t);rej(e)}})});
+ const p=gq.then(run);gq=p.catch(()=>{});return p}
+const linked=()=>!!(ch.C&&dev&&dev.gatt&&dev.gatt.connected);
+function setNote(t,bad){NOTE=t||'';NOTEBAD=!!bad;paintSt()}
+function send(key,bytes){if(!connected)return;q.set(key,bytes);if(key!=='sp')lastSend=Date.now();if(!busy)pump()}
+async function pump(){busy=true;const g=gen;if(!NOTE)setNote('mengirim…');
+ while(q.size&&g===gen){
+  if(!linked())break;
+  const[k,b]=q.entries().next().value,d=new Uint8Array(b);let ok=false,hung=false;
+  for(let t=0;t<3&&!ok&&g===gen;t++){try{await gio(()=>wr(ch.C,d),3000);ok=true}catch(e){if(!linked())break;if(e.timeout){hung=true;break}await wait(120)}}   // macet (timeout) = link mati, jangan diulang-ulang
+  if(g!==gen)return;
+  if(ok){failCnt=0;if(q.get(k)===b)q.delete(k)}   // kalau nilai baru masuk saat menulis, biarkan terkirim lagi
+  else if(!linked())break;
+  else if(hung||++failCnt>=2){failCnt=0;busy=false;setNote('kirim gagal',1);linkBad('Pengiriman ke alat gagal');return}
+  await wait(4)}
+ if(g===gen){busy=false;if(NOTE==='mengirim…')setNote('')}}
 function gcmd(b,ms=4000){return new Promise((res,rej)=>{
- if(!ch.G||!dev||!dev.gatt.connected)return rej(new Error('Belum terhubung'));
- const w={cmd:b[0],res};w.t=setTimeout(()=>{rmW(w);rej(new Error('Alat tidak membalas'))},ms);GW.push(w);
- wr(ch.G,new Uint8Array(b)).catch(e=>{clearTimeout(w.t);rmW(w);rej(e)})})}
+ if(!linked()||!ch.G)return rej(new Error('Belum terhubung'));
+ const w={cmd:b[0],res,rej,done:false};GW.push(w);
+ w.fin=()=>{w.done=true;clearTimeout(w.t);rmW(w)};
+ /* batas waktu balasan baru mulai setelah perintah benar-benar terkirim (antrean tulis bisa panjang) */
+ gio(()=>wr(ch.G,new Uint8Array(b)),6000).then(()=>{if(w.done)return;w.t=setTimeout(()=>{if(w.done)return;w.fin();rej(new Error('Alat tidak membalas'))},ms)},e=>{if(w.done)return;w.fin();rej(e)})})}
 async function step(name,fn,n=3){for(let i=0;i<n;i++){try{return await fn()}catch(e){if(i===n-1){e.message=name+': '+e.message;throw e}await wait(500)}}}
 
-function setSt(on){const s=$('#st');
- const txt=on==='busy'?'● Menghubungkan…':on?'● '+(dev&&dev.name?dev.name:'Terhubung'):'● Belum terhubung';
- s.textContent=txt;s.className='st'+(on==='busy'?' busy':on?'':' off');
+let ST=false;
+function paintSt(){const s=$('#st'),on=ST;
+ s.textContent=on==='busy'?'● Menghubungkan…':on?'● '+(dev&&dev.name?dev.name:'Terhubung')+(NOTE?' · '+NOTE:''):'● Belum terhubung';
+ s.className='st'+(on==='busy'?' busy':on?(NOTEBAD?' busy':''):' off')}
+function setSt(on){ST=on;paintSt();
  const lab=on==='busy'?'Menghubungkan…':on?'Putuskan':'Hubungkan';
  ['#bc','#bc2','#bc3'].forEach(i=>{$(i).textContent=lab;$(i).disabled=on==='busy'});
  $('#sst').textContent=on==='busy'?'Menghubungkan…':on?'Terhubung (Bluetooth)':'Belum terhubung';
  document.body.classList.toggle('offline',!on||on==='busy');$('#offl').hidden=!!on&&on!=='busy';
- if(on===true&&specOn)syncSpec()}
-function onDrop(){const was=connected;ch={};connected=false;INFO.authed=1;INFO.ok=0;GW.splice(0).forEach(w=>{clearTimeout(w.t)});
- for(let i=0;i<6;i++){lv[i]=-60}setSt(false);renderSys();if(was&&!$('#app').hidden){toast('Koneksi terputus');setTimeout(armAuto,1500)}}
+ if(on===true)syncSpec()}
+function onDrop(force){
+ if(!force&&dev&&dev.gatt&&dev.gatt.connected)return;      // event lama dari koneksi sebelumnya, abaikan
+ const was=connected;
+ if(was&&q.size)dirty=true;                                 // ada perubahan yg belum sempat terkirim -> kirim ulang saat tersambung lagi
+ q.clear();gen++;busy=false;gq=Promise.resolve();ch={};connected=false;INFO.authed=1;INFO.ok=0;
+ GW.splice(0).forEach(w=>{w.done=true;clearTimeout(w.t);w.rej(new Error('Koneksi terputus'))});
+ NOTE='';NOTEBAD=false;for(let i=0;i<6;i++){lv[i]=-60}setSt(false);renderSys();
+ if(was&&!$('#app').hidden){toast('Koneksi terputus');setTimeout(armAuto,1500)}}
+/* link dianggap mati (tulis gagal / alat diam) -> putuskan paksa lalu sambung ulang otomatis */
+function linkBad(why){if(!connected)return;toast(why+' – menyambung ulang…',3500);
+ try{dev&&dev.gatt.disconnect()}catch(e){}
+ setTimeout(()=>{if(connected)onDrop(true)},1200)}
 async function openGatt(d){
- if(!d.__ev){d.__ev=1;d.addEventListener('gattserverdisconnected',onDrop)}
+ if(!d.__ev){d.__ev=1;d.addEventListener('gattserverdisconnected',()=>onDrop())}
  const sv=await step('layanan BLE',async()=>{try{const g=await d.gatt.connect();await wait(800);return await g.getPrimaryService(U.S)}
   catch(e){try{d.gatt.disconnect()}catch(_){}await wait(600);throw e}},4);
  ch={};ch.C=await step('karakteristik kontrol',()=>sv.getCharacteristic(U.C));
  for(const[k,id]of[['T',U.T],['R',U.R],['P',U.P],['G',U.G]]){
   ch[k]=await step('karakteristik '+k,()=>sv.getCharacteristic(id));
   await step('notifikasi '+k,()=>ch[k].startNotifications());
-  ch[k].addEventListener('characteristicvaluechanged',e=>onNote(k,new Uint8Array(e.target.value.buffer)));await wait(250)}
- connected=true;setSt(true);
+  ch[k].addEventListener('characteristicvaluechanged',e=>{const v=e.target.value;onNote(k,new Uint8Array(v.buffer,v.byteOffset,v.byteLength))});await wait(250)}
+ connected=true;lastRx=Date.now();failCnt=0;setSt(true);
  return await afterConnect()}
 async function connect(pick){
  if(connecting)return false;connecting=true;setSt('busy');
  try{
+  if(pick)manual=false;
   if(pick||!dev)dev=await navigator.bluetooth.requestDevice({filters:[{services:[U.S]}]});
   LS.set('dlmsId',dev.id||'');
   const ok=await openGatt(dev);
-  if(ok)onConnected();return ok;
+  if(ok){directTries=0;onConnected();startLink()}
+  return ok;
  }catch(e){ch={};connected=false;try{dev&&dev.gatt.disconnect()}catch(_){}setSt(false);
   if(pick&&e.name!=='NotFoundError')modal({title:'Gagal terhubung',msg:e.message+'\n\nCoba: tutup aplikasi lain yang terhubung ke DLMS, matikan lalu nyalakan Bluetooth HP, lalu tekan Hubungkan lagi.',cancel:false});
   return false}
  finally{connecting=false}}
 async function afterConnect(){
- let r=null;try{r=await gcmd([0x13],2500)}catch(e){}
- if(r&&INFO.pin&&!INFO.authed){const ok=await askPin();if(!ok){try{dev.gatt.disconnect()}catch(e){}return false}try{await gcmd([0x13],2500)}catch(e){}}
- setTimeout(()=>send('all',[0x0B]),300);return true}
+ /* alat harus membalas GET_INFO; kalau tidak, koneksi ini "setengah mati" (tampak terhubung tapi tidak mengontrol) -> gagalkan & coba lagi */
+ let r=null;
+ for(let i=0;i<4&&!r;i++){try{r=await gcmd([0x13],2200)}catch(e){if(!connected)return false}}
+ if(!r)throw new Error('Alat tidak membalas setelah tersambung.');
+ if(INFO.pin&&!INFO.authed){const ok=await askPin();if(!ok){try{dev.gatt.disconnect()}catch(e){}return false}try{await gcmd([0x13],2500)}catch(e){}}
+ return true}
+/* tarik seluruh setingan dari alat (dengan balasan ditunggu + ulang). force = selalu dipakai; tidak force = dibuang kalau user baru saja mengubah sesuatu */
+let stW=null,stP=null;
+function pullStatus(force){
+ if(stP)return stP;
+ stP=(async()=>{
+  for(let i=0;i<(force?3:1);i++){
+   if(!connected)return false;
+   let res;const got=new Promise(r=>res=r);
+   stW={r:res,t:Date.now(),force:!!force};
+   try{await gio(()=>wr(ch.C,new Uint8Array([0x0B])),3000)}catch(e){}
+   const ok=await Promise.race([got,wait(force?1800:2500).then(()=>false)]);
+   stW=null;if(ok)return true}
+  return false})().finally(()=>{stP=null});
+ return stP}
+async function startLink(){
+ lastRx=Date.now();lastPoll=Date.now();
+ try{
+  if(dirty){dirty=false;syncAll();return}                  // koneksi sempat putus saat ada perubahan belum terkirim: aplikasi menang
+  setNote('membaca setingan alat…');
+  const ok=await pullStatus(true);
+  setNote('');
+  toast(ok?(INFO.stVer<3?'Setingan alat dimuat (sebagian – lihat tab Sistem)':'Setingan alat dimuat'):'Alat belum mengirim status – tekan "Ambil dari alat" di tab Sistem',3000);
+ }catch(e){setNote('')}}
+/* detak jantung: kalau tidak ada notifikasi sama sekali >4 dtk, ping alat; 2x gagal = link mati -> sambung ulang.
+   Selain itu, tiap 6 dtk saat user diam, tarik status supaya tampilan ikut setingan di alat (knob/menu alat). */
+async function hb(){
+ if(!connected||connecting||hbBusy||OPBUSY)return;
+ const now=Date.now();
+ if(now-lastRx>4000){
+  hbBusy=true;
+  try{await gcmd([0x13],2500);hbFail=0}catch(e){if(++hbFail>=2){hbFail=0;hbBusy=false;linkBad('Alat tidak membalas');return}}
+  hbBusy=false;return}
+ hbFail=0;
+ if(now-lastPoll>6000&&!q.size&&!busy&&now-lastSend>2000){lastPoll=now;hbBusy=true;try{await pullStatus(false)}catch(e){}hbBusy=false}}
+const holdOp=ms=>{OPBUSY++;setTimeout(()=>OPBUSY--,ms)};
+const editing=()=>{const a=document.activeElement;return !!a&&(a.tagName==='INPUT'||a.tagName==='SELECT')&&a.type!=='range'&&$('#pgs').contains(a)};
+document.addEventListener('focusout',()=>{if(needRender)setTimeout(()=>{if(needRender&&!editing()){needRender=false;renderAll()}},150)});
 async function askPin(){
  let msg='Alat ini dilindungi PIN.',stored=LS.get('dlmsPin',''),first=true;
  for(let n=0;n<3;n++){
@@ -421,25 +501,59 @@ async function askPin(){
   if(!connected||!dev.gatt.connected)return false;
   msg='PIN salah. Coba lagi.'}
  return false}
-function onNote(k,d){
- if(k==='R'){for(let i=0;i<6;i++)lv[i]=d[i]/255*60-60}
- else if(k==='P'){spec=d.slice(2);drawSpec()}
+function onNote(k,d){lastRx=Date.now();
+ if(k==='R'){for(let i=0;i<6&&i<d.length;i++)lv[i]=d[i]/255*60-60}
+ else if(k==='P'){const s=new Uint8Array(32);s.set(d.subarray(2,34));const key=d[0]+':'+d[1];SP[key]={a:s,t:Date.now()};spDirty=true;
+  if(key===S.rch+':'+S.rpt){spec=s;specAt=Date.now();specDirty=true}}
  else if(k==='G'){
   if(d[0]===0x13&&d[1]===0)parseInfo(d);
-  const i=GW.findIndex(w=>w.cmd===d[0]);if(i>=0){const w=GW[i];GW.splice(i,1);clearTimeout(w.t);w.res(d)}}
+  const i=GW.findIndex(w=>w.cmd===d[0]);if(i>=0){const w=GW[i];w.fin();w.res(d)}}
  else if(k==='T')parseStatus(d)}
-function parseInfo(d){let p=8;const n=d[7];
+function parseInfo(d){let p=8;if(d.length<8)return;const n=Math.min(d[7],d.length-8);
  INFO.pin=d[2];INFO.authed=d[3];INFO.fs=d[4];INFO.lb=d[5];INFO.ls=d[6];INFO.name=String.fromCharCode(...d.slice(8,8+n));p=8+n;
  if(d.length>=p+6){INFO.w=d[p]|d[p+1]<<8;INFO.h=d[p+2]|d[p+3]<<8;INFO.idle=d[p+4]|d[p+5]<<8;p+=6}
  if(d.length>=p+2){INFO.theme=d[p];INFO.tn=d[p+1]}else INFO.theme=-1;
  INFO.ok=1;renderSys()}
-function parseStatus(d){let p=0;const u=()=>d[p++],r16=()=>{const v=d[p]|d[p+1]<<8;p+=2;return v},s16=()=>{const v=r16();return v>32767?v-65536:v};
- for(let i=0;i<4;i++)S.route[i]=u();for(let i=0;i<4;i++)S.gain[i]=s16();for(let i=0;i<4;i++)S.hpf[i]=r16();for(let i=0;i<4;i++)S.lpf[i]=r16();
- S.mute=u();for(let i=0;i<4;i++)S.ht[i]=u();for(let i=0;i<4;i++)S.lt[i]=u();
- if(d.length>p+1){const gm=u();for(let i=0;i<4;i++)S.gate[i].e=gm>>i&1;for(let i=0;i<4;i++)S.gate[i].t=s16()/10;for(let i=0;i<4;i++)S.gate[i].a=r16();for(let i=0;i<4;i++)S.gate[i].r=r16();S.gen.m=u();S.gen.l=s16()/10;
-  if(d.length>=p+4){S.ig=[s16(),s16()];S.phase=u();
-   for(let i=0;i<6;i++)S.lim[i].t=s16()/10;for(let i=0;i<6;i++)S.lim[i].r=r16()/10;for(let i=0;i<6;i++)S.lim[i].a=r16();for(let i=0;i<6;i++)S.lim[i].l=r16()}}
- save();renderAll()}
+/* Baca paket status ke objek TERPISAH dulu. Hanya bagian yang lengkap yang dipakai, jadi paket terpotong (MTU kecil)
+   tidak lagi merusak nilai di aplikasi (dulu jadi NaN / 0). Ukuran penuh = 118 byte (v1=37, v2=65, v3=118). */
+function readStatus(d){
+ const N=d.length;if(N<37)return null;let p=0;
+ const u=()=>d[p++],r16=()=>{const v=d[p]|d[p+1]<<8;p+=2;return v},s16=()=>{const v=r16();return v>32767?v-65536:v};
+ const o={ver:1,route:[],gain:[],hpf:[],lpf:[],ht:[],lt:[]};
+ for(let i=0;i<4;i++)o.route[i]=clamp(u(),0,2);
+ for(let i=0;i<4;i++)o.gain[i]=clamp(s16(),-40,6);
+ for(let i=0;i<4;i++)o.hpf[i]=clamp(r16(),20,20000);
+ for(let i=0;i<4;i++)o.lpf[i]=clamp(r16(),20,20000);
+ o.mute=u();
+ for(let i=0;i<4;i++)o.ht[i]=clamp(u(),0,8);
+ for(let i=0;i<4;i++)o.lt[i]=clamp(u(),0,8);
+ if(N>=65){o.ver=2;o.gm=u();o.gt=[];o.ga=[];o.gr=[];
+  for(let i=0;i<4;i++)o.gt[i]=clamp(s16()/10,-80,0);
+  for(let i=0;i<4;i++)o.ga[i]=clamp(r16(),1,200);
+  for(let i=0;i<4;i++)o.gr[i]=clamp(r16(),10,3000);
+  o.genm=clamp(u(),0,2);o.genl=clamp(s16()/10,-40,-3);
+  if(N>=118){o.ver=3;o.ig=[clamp(s16(),-40,6),clamp(s16(),-40,6)];o.phase=u();o.lt_=[];o.lr=[];o.la=[];o.ll=[];
+   for(let i=0;i<6;i++)o.lt_[i]=clamp(s16()/10,-30,0);
+   for(let i=0;i<6;i++)o.lr[i]=clamp(r16()/10,1,100);
+   for(let i=0;i<6;i++)o.la[i]=clamp(r16(),1,100);
+   for(let i=0;i<6;i++)o.ll[i]=clamp(r16(),10,5000)}}
+ return o}
+const stSig=()=>JSON.stringify([S.route,S.gain,S.hpf,S.lpf,S.mute,S.ht,S.lt,S.gate,S.gen,S.ig,S.phase,S.lim]);
+function applyStatus(o){const a=stSig();
+ S.route=o.route;S.gain=o.gain;S.hpf=o.hpf;S.lpf=o.lpf;S.mute=o.mute;S.ht=o.ht;S.lt=o.lt;
+ if(o.ver>=2){for(let i=0;i<4;i++){const G=S.gate[i];G.e=o.gm>>i&1;G.t=o.gt[i];G.a=o.ga[i];G.r=o.gr[i]}S.gen.m=o.genm;S.gen.l=o.genl}
+ if(o.ver>=3){S.ig=o.ig;S.phase=o.phase;for(let i=0;i<6;i++){const L=S.lim[i];L.t=o.lt_[i];L.r=o.lr[i];L.a=o.la[i];L.l=o.ll[i]}}
+ return stSig()!==a}
+function parseStatus(d){
+ INFO.stLen=d.length;const o=readStatus(d);
+ if(!o){INFO.stVer=0;renderSys();return false}
+ INFO.stVer=o.ver;
+ const w=stW;
+ /* jangan timpa tampilan dengan status basi kalau user baru saja mengubah sesuatu (kecuali tarik paksa) */
+ const skip=w?(!w.force&&lastSend>w.t-300):(Date.now()-lastSend<1500);
+ if(!skip&&applyStatus(o)){save();if(editing())needRender=true;else renderAll()}
+ renderSys();
+ if(w)w.r(true);return true}
 const limB=c=>{const L=S.lim[c];return[8,c,...i16(Math.round(L.t*10)),L.a&255,L.a>>8,L.l&255,L.l>>8,...i16(Math.round(L.r*10))]};
 const gateB=i=>{const G=S.gate[i];return[0x0C,i,G.e?1:0,...i16(Math.round(G.t*10)),G.a&255,G.a>>8,G.r&255,G.r>>8]};
 const peqB=(c,n)=>{const k=S.peq[c][n];return[6,c,n,k.f,...i16(k.g),k.q&255,k.q>>8]};
@@ -450,15 +564,15 @@ function syncAll(){
  send('m',[3,S.mute]);send('ph',[0x0F,S.phase]);toast('Sinkron ke alat…')}
 
 /* ---------- auto-connect ---------- */
-const autoOn=()=>LS.get('dlmsAuto','1')==='1'&&!LOCK;
+const autoOn=()=>LS.get('dlmsAuto','1')==='1'&&!LOCK&&!manual;
 let arm=null,directTries=0;
 async function permDevice(){try{if(!navigator.bluetooth||!navigator.bluetooth.getDevices)return null;const l=await navigator.bluetooth.getDevices();const id=LS.get('dlmsId','');return l.find(d=>d.id===id)||l[0]||null}catch(e){return null}}
 async function armAuto(){
  if(arm||connected||connecting||!autoOn())return 'skip';
- const d=await permDevice();if(!d)return 'none';
+ const d=(await permDevice())||dev;if(!d)return 'none';       // getDevices tidak ada / kosong: pakai perangkat yg barusan tersambung
  if(arm||connected||connecting)return 'skip';
  dev=d;arm=new AbortController();
- const go=async()=>{arm=null;if(connected||connecting||!autoOn())return;await connect(false);if(!connected&&directTries++<6)setTimeout(armAuto,4000)};
+ const go=async()=>{arm=null;if(connected||connecting||!autoOn())return;await connect(false);if(!connected&&directTries++<10)setTimeout(armAuto,4000)};
  if(d.watchAdvertisements){
   const h=()=>{d.removeEventListener('advertisementreceived',h);try{arm&&arm.abort()}catch(e){}go()};
   d.addEventListener('advertisementreceived',h);
@@ -476,7 +590,9 @@ function buildMeters(){const mt=$('#mt');mt.innerHTML='';MT.length=0;
 function tickMeters(){requestAnimationFrame(tickMeters);
  for(let i=0;i<6;i++){const t=demo?-12-8*Math.abs(Math.sin(Date.now()/700+i)):lv[i];lvs[i]+=(t-lvs[i])*.4}
  if(PAGE==='home'||PAGE==='in')for(const m of MT){const l=lvs[m.i];m.bar.style.height=(100-clamp((l+48)/48,0,1)*100)+'%';m.txt.textContent=l<=-59?'-- dB':l.toFixed(1)+' dB'}
- animCards();ANIM&&ANIM();if(specOn&&PAGE==='rta')drawSpec()}
+ animCards();ANIM&&ANIM();
+ if(PAGE==='rta'){const n=performance.now();if(n-lastSpecDraw>=((specDirty||pkMov)?33:250)){lastSpecDraw=n;specDirty=false;drawSpec()}}
+ if(PAGE==='in'){const n=performance.now();if(n-lastInDraw>=((spDirty||ipkMov)?33:250)){lastInDraw=n;spDirty=false;drawInSpec()}}}
 function animCards(){$$('#co .oc').forEach((c,i)=>{const l=lvs[2+i],L=S.lim[i],G=S.gate[i],a=$('.il',c),b=$('.ig',c);
  a.className='il'+(l>-59&&L.t<0&&l>=L.t-0.3?' a':'');
  if(!G.e){b.className='ig'}else{GO[i]=l>G.t+(GO[i]?-2:0)?1:0;b.className='ig '+(GO[i]?'o':'c')}})}
@@ -509,13 +625,14 @@ function buildInputs(){const o=$('#ci');o.innerHTML='';
   ROUTE.forEach((n,v)=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>{S.route[i]=v;send('r'+i,[1,i,v]);save();renderIn()};$('.seg',r).append(b)});mx.append(r)}}
 function renderIn(){
  $$('#ci .oc').forEach((c,i)=>{$('.mu',c).className='mu'+(S.mute>>i&1?' on':'');const ph=$('.ph',c);ph.className='ph'+(S.phase>>(4+i)&1?' on':'');ph.textContent=S.phase>>(4+i)&1?'Ø Invert':'Ø Normal';GC.inp[i].redraw()});
- $$('#mx .seg').forEach((s,i)=>$$('button',s).forEach((b,v)=>b.className=S.route[i]===v?'on':''))}
+ $$('#mx .seg').forEach((s,i)=>$$('button',s).forEach((b,v)=>b.className=S.route[i]===v?'on':''));
+ $$('#isel button').forEach((b,i)=>b.className=(S.isel|0)===i?'on':'')}
 
 /* ---------- DSP ---------- */
 const mag=(t,sl,fc,f,hp)=>{if(hp?fc<=20:fc>=20000)return 1;const n=[2,4,8][sl],r=hp?fc/f:f/fc;
  const b=n2=>1/Math.sqrt(1+Math.pow(r,2*n2));return t===0?b(n/2)**2:b(n)};
 function peqDb(c,f){let s=0;S.peq[c].forEach(b=>{if(!b.g)return;const f0=FQ[b.f],g=b.g/10,Q=b.q/10,x=Math.log2(f/f0);s+=g*Math.exp(-(x*x)*Q*Q*1.2)});return s}
-function graph(cv,fn){const dpr=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;if(!w||!h)return;cv.width=w*dpr;cv.height=h*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);
+function graph(cv,fn){const dpr=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;if(!w||!h)return;const W=Math.round(w*dpr),H=Math.round(h*dpr);if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);g.lineWidth=1;g.globalAlpha=1;
  const X=f=>Math.log(f/20)/Math.log(1000)*(w-30)+25,Y=d=>(12-d)/36*(h-20)+4;g.strokeStyle='#2a3646';g.fillStyle='#7d8da0';g.font='10px sans-serif';
  [12,6,0,-6,-12,-18,-24].forEach(d=>{g.beginPath();g.moveTo(25,Y(d));g.lineTo(w,Y(d));g.stroke();g.fillText(d>0?'+'+d:d,0,Y(d)+3)});
  [20,50,100,200,500,1000,2000,5000,10000,20000].forEach(f=>{g.beginPath();g.moveTo(X(f),4);g.lineTo(X(f),h-16);g.stroke();g.fillText(f>=1000?f/1000+'k':f,X(f)-8,h-4)});
@@ -546,9 +663,11 @@ function xSync(){XU.forEach(u=>u.forEach(e=>e.up()));xGraph()}
 function xGraph(){const cv=$('#gx');if(!cv)return;cv._h=[];graph(cv,(g,X,Y)=>{for(let i=0;i<4;i++){curve(g,X,Y,f=>tot(i,f),COL[i]);
  [[true,S.hpf[i]],[false,S.lpf[i]]].forEach(([hp,f])=>{if(hp?f<=20:f>=20000)return;const x=X(f),y=Y(clamp(tot(i,f),-24,12));cv._h.push({x,y,i,hp});
   g.fillStyle=COL[i];g.strokeStyle='#fff';g.lineWidth=2;g.beginPath();g.arc(x,y,7,0,7);g.fill();g.stroke()})}})}
-function pGraph(){const c=S.ch,cv=$('#gp');if(!cv)return;cv._h=[];graph(cv,(g,X,Y)=>{curve(g,X,Y,f=>peqDb(c,f),c<4?COL[c]:'#e33');
+function barsBg(g,X,h,e,col){if(!e||Date.now()-e.t>2000)return;g.save();g.globalAlpha=.32;g.fillStyle=col;const top=4,bot=h-16;
+ for(let i=0;i<32;i++){const x0=X(20*Math.pow(1000,i/32)),x1=X(20*Math.pow(1000,(i+1)/32)),bh=e.a[i]/255*(bot-top);g.fillRect(x0+1,bot-bh,Math.max(1,x1-x0-2),bh)}g.restore()}
+function pGraph(){const c=S.ch,cv=$('#gp');if(!cv)return;cv._h=[];graph(cv,(g,X,Y)=>{barsBg(g,X,cv.clientHeight,SP[c+':2'],c<4?COL[c]:'#e33');curve(g,X,Y,f=>peqDb(c,f),c<4?COL[c]:'#e33');
  S.peq[c].forEach((k,n)=>{const x=X(FQ[k.f]),y=Y(clamp(k.g/10,-24,12));cv._h.push({x,y,n});g.fillStyle='#fff';g.beginPath();g.arc(x,y,6,0,7);g.fill();g.fillStyle='#7d8da0';g.fillText(n+1,x-3,y-9)})})}
-function drawTab(){ANIM=null;XU.length=0;const tb=$('#tb');tb.innerHTML='';
+function drawTab(){ANIM=null;XU.length=0;syncSpec();const tb=$('#tb');tb.innerHTML='';
  if(tab==='x'){
   tb.innerHTML='<canvas id="gx"></canvas><div class="dm" style="margin:4px 0 8px">Geser fader seperti mixer digital, seret titik di grafik, tekan − / + untuk geser halus, atau ketik frekuensi 20–20000 Hz. HPF 20 = off, LPF 20000 = off.</div><div class="l" id="xall"><span class="dm">Tipe filter semua output <small>(LR = Linkwitz-Riley, BW = Butterworth)</small></span></div><div class="mix" id="mix"></div>';
   $('#xall').append(modeSel(-1,m=>{for(let i=0;i<4;i++){S.ht[i]=S.lt[i]=m;send('xh'+i,[0x0D,i,0,m]);send('xl'+i,[0x0D,i,1,m])}save();drawTab()}));
@@ -571,7 +690,7 @@ function drawTab(){ANIM=null;XU.length=0;const tb=$('#tb');tb.innerHTML='';
    $('#mix').append(d);XU[i].forEach(e=>e.up())}
   xGraph();dragger('#gx',(h,f)=>setF(h.i,h.hp,nice(f)),save)}
  else if(tab==='p'){const c=S.ch;
-  tb.innerHTML='<div class="tabs"></div><canvas id="gp"></canvas><div class="pq h" style="margin-top:8px"><span>#</span><span>Freq (Hz)</span><span>Gain (dB)</span><span>Q</span></div><div id="pr"></div>';
+  tb.innerHTML='<div class="tabs"></div><canvas id="gp"></canvas><div class="dm" style="margin-top:4px">Bar di latar grafik = spektrum kanal ini sesudah PEQ (live dari alat).</div><div class="pq h" style="margin-top:8px"><span>#</span><span>Freq (Hz)</span><span>Gain (dB)</span><span>Q</span></div><div id="pr"></div>';
   const rs=document.createElement('button');rs.textContent='Reset flat';
   rs.onclick=()=>{S.peq[c].forEach((k,n)=>{k.g=0;send('p'+c+n,peqB(c,n))});save();drawTab()};
   tb.firstChild.append(sel(CHN,c,v=>{S.ch=v;save();drawTab()}),rs);
@@ -582,7 +701,8 @@ function drawTab(){ANIM=null;XU.length=0;const tb=$('#tb');tb.innerHTML='';
    const qi=num(k.q/10,.3,10,.1,v=>{k.q=Math.round(v*10);qi.value=k.q/10;push()});
    P.inp[n]=[fi,gi,qi];r.append(fi,gi,qi);$('#pr').append(r)});
   pGraph();dragger('#gp',(h,f,d)=>{const k=S.peq[c][h.n];k.f=nearest(f);k.g=Math.round(clamp(d,-12,12)*10);P.inp[h.n][0].value=FQ[k.f];P.inp[h.n][1].value=k.g/10;
-   send('p'+c+h.n,peqB(c,h.n));pGraph()},save)}
+   send('p'+c+h.n,peqB(c,h.n));pGraph()},save);
+  ANIM=()=>{const n=performance.now();if(spDirty&&n-lastBarDraw>60){lastBarDraw=n;spDirty=false;pGraph()}}}
  else if(tab==='l'){const c=S.ch,L=S.lim[c];tb.innerHTML='<div class="tabs"></div><canvas id="lc"></canvas><div class="dm" style="margin:4px 0">Titik = level meter saat ini pada kurva limiter (perkiraan).</div><div id="pr"></div>';
   tb.firstChild.append(sel(CHN,c,v=>{S.ch=v;save();drawTab()}));
   const lm=()=>{send('L'+c,limB(c));save()};
@@ -616,16 +736,41 @@ function drawTab(){ANIM=null;XU.length=0;const tb=$('#tb');tb.innerHTML='';
    buf.forEach((v,k)=>{const px=k/239*w,py=h/2-v*h/2;k?g.lineTo(px,py):g.moveTo(px,py)});g.stroke();g.fillStyle=m?'#2ecc71':'#7d8da0';g.font='bold 12px sans-serif';g.fillText(m?['','WHITE NOISE','PINK NOISE'][m]+'  '+S.gen.l.toFixed(1)+' dB':'Generator mati',8,16)}}
  else{tb.innerHTML='<div id="pr"></div>';for(let i=0;i<4;i++)$('#pr').append(row('OUT '+(i+1),0,3000,1,S.delay[i],v=>(v/10).toFixed(1)+' ms · '+(v/10*.343).toFixed(2)+' m',v=>{S.delay[i]=v;send('d'+i,[7,i,...i16(v)]);save();DL[i]&&DL[i].up()}))}}
 
-/* ---------- RTA ---------- */
-let spec=new Uint8Array(32);const pk=new Float32Array(32);
+/* ---------- SPEKTRUM (RTA, PEQ, Input) ---------- */
+/* Alat menganalisis SATU sumber sekali waktu, dan tiap paket menyebut kanal:titik yang benar-benar dipakai.
+   Web menyimpan paket per "kanal:titik" supaya tiap grafik memakai datanya sendiri. */
+const SP={},ZERO=new Uint8Array(32);
+let spec=new Uint8Array(32),specAt=0,specDirty=true,spDirty=false,pkMov=false,ipkMov=false,lastSpecDraw=0,lastInDraw=0,lastBarDraw=0;const pk=new Float32Array(32),ipk=new Float32Array(32);
 const RSRC=[['IN-L',4],['IN-R',5],['OUT 1',0],['OUT 2',1],['OUT 3',2],['OUT 4',3]],RPT=['Sebelum xover','Sesudah xover','Sesudah PEQ'];
-function syncSpec(){if(ch.C)send('sp',[0x30,specOn?1:0,S.rch,S.rpt])}
-function drawSpec(){const c=$('#spec');if(!c)return;const w=c.clientWidth,h=c.clientHeight,d=devicePixelRatio||1;if(!w||!h)return;c.width=w*d;c.height=h*d;const g=c.getContext('2d');g.scale(d,d);
- const L=30,B=16,pw=w-L,ph=h-B,bw=pw/32;g.font='10px sans-serif';g.strokeStyle='#2a3646';g.fillStyle='#7d8da0';
+/* sumber yang dibutuhkan halaman yang sedang terbuka: [kanal,titik] atau null */
+function wantSpec(){
+ if(PAGE==='rta')return specOn?[S.rch,S.rpt]:null;
+ if(PAGE==='dsp'&&tab==='p')return[S.ch,2];
+ if(PAGE==='in')return[4+(S.isel|0),0];
+ return null}
+let spSent=false;
+function syncSpec(){if(!connected||!ch.C)return;const w=wantSpec();
+ if(w){send('sp',[0x30,1,w[0],w[1]]);spSent=true}
+ else if(spSent){send('sp',[0x30,0,0,0]);spSent=false}}   // tidak ada halaman yang butuh -> alat berhenti menganalisis
+function spMsg(key){if(!connected)return'Belum terhubung ke DLMS';const e=SP[key];if(e&&Date.now()-e.t<3000)return'';
+ return Object.values(SP).some(v=>Date.now()-v.t<3000)?'Layar alat sedang menganalisis sumber lain':'Menunggu data dari alat…'}
+/* gambar bar 32 pita + peak hold ke kanvas c. Ukuran kanvas TIDAK diubah tiap frame (dulu bikin HP macet). */
+function paintSpec(c,arr,pkA,msg){const w=c.clientWidth,h=c.clientHeight,d=devicePixelRatio||1;if(!w||!h)return false;
+ const W=Math.round(w*d),H=Math.round(h*d);if(c.width!==W||c.height!==H){c.width=W;c.height=H}
+ const g=c.getContext('2d');g.setTransform(d,0,0,d,0,0);g.clearRect(0,0,w,h);
+ const now=performance.now(),dt=pkA.t?Math.min(120,now-pkA.t):0;pkA.t=now;
+ const L=30,B=16,pw=w-L,ph=h-B,bw=pw/32;g.font='10px sans-serif';g.strokeStyle='#2a3646';g.fillStyle='#7d8da0';g.lineWidth=1;
  for(let k=0;k<=7;k++){const y=4+k/7*(ph-4);g.beginPath();g.moveTo(L,y);g.lineTo(w,y);g.stroke();g.fillText(String(-20-k*10),0,y+3)}
  [20,50,100,200,500,1000,2000,5000,10000,20000].forEach(f=>{const x=L+Math.log(f/20)/Math.log(1000)*pw;g.beginPath();g.moveTo(x,4);g.lineTo(x,ph);g.stroke();g.fillText(f>=1000?f/1000+'k':f,clamp(x-8,L-6,w-16),h-3)});
- spec.forEach((v,i)=>{pk[i]=Math.max(v,pk[i]-1.2);g.fillStyle=v>200?'#e33':v>140?'#ec3':'#3d3';const bh=v/255*(ph-4);g.fillRect(L+i*bw+1,ph-bh,bw-2,bh);
-  g.fillStyle='#fff';g.fillRect(L+i*bw+1,ph-pk[i]/255*(ph-4)-1,bw-2,2)})}
+ let mov=false;
+ for(let i=0;i<32;i++){const v=arr[i];pkA[i]=Math.max(v,pkA[i]-dt*0.06);if(pkA[i]>v+0.5)mov=true;g.fillStyle=v>200?'#e33':v>140?'#ec3':'#3d3';const bh=v/255*(ph-4);g.fillRect(L+i*bw+1,ph-bh,bw-2,bh);
+  g.fillStyle='#fff';g.fillRect(L+i*bw+1,ph-pkA[i]/255*(ph-4)-1,bw-2,2)}
+ if(msg){g.fillStyle='#e6a100';g.font='bold 13px sans-serif';g.textAlign='center';g.fillText(msg,L+pw/2,ph/2);g.textAlign='left'}
+ return mov}
+function drawSpec(){const c=$('#spec');if(!c)return;
+ pkMov=paintSpec(c,specOn?spec:ZERO,pk,!connected?'Belum terhubung ke DLMS':!specOn?'RTA mati – tekan tombol RTA':spMsg(S.rch+':'+S.rpt))}
+function drawInSpec(){const c=$('#isp');if(!c)return;const key=(4+(S.isel|0))+':0',e=SP[key],fresh=!!e&&Date.now()-e.t<3000;
+ ipkMov=paintSpec(c,fresh?e.a:ZERO,ipk,spMsg(key))}
 
 /* ---------- PRESET ---------- */
 function buildPre(){const ps=$('#ps');ps.innerHTML='';
@@ -633,11 +778,11 @@ function buildPre(){const ps=$('#ps');ps.innerHTML='';
  const pn=$('#pn');pn.value=S.pn[S.slot]||'';pn.onchange=()=>{S.pn[S.slot]=pn.value.trim();save()}}
 $('#sv').onclick=async()=>{const n=S.slot+1,nm=S.pn[S.slot]?' ('+S.pn[S.slot]+')':'';
  if(!await modal({title:'Simpan ke slot '+n+'?',msg:'Isi slot '+n+nm+' di alat akan ditimpa dengan pengaturan sekarang.',ok:'Simpan'}))return;
- send('sv',[0x0A,S.slot]);LS.set('dlmsP'+S.slot,JSON.stringify({peq:S.peq,delay:S.delay}));toast(connected?'Preset '+n+' disimpan':'Offline: hanya tersimpan di aplikasi')};
+ holdOp(2500);send('sv',[0x0A,S.slot]);LS.set('dlmsP'+S.slot,JSON.stringify({peq:S.peq,delay:S.delay}));toast(connected?'Preset '+n+' disimpan':'Offline: hanya tersimpan di aplikasi')};
 $('#ld').onclick=async()=>{const n=S.slot+1;
  if(!await modal({title:'Muat slot '+n+'?',msg:'Seluruh pengaturan DSP alat akan diganti dengan isi slot '+n+'.',ok:'Muat'}))return;
  send('ld',[9,S.slot]);const c=LS.get('dlmsP'+S.slot,'');if(c){try{const o=JSON.parse(c);S.peq=o.peq;S.delay=o.delay;save()}catch(e){}}
- setTimeout(()=>send('all',[0x0B]),900);renderAll();toast('Memuat preset '+n+'…')};
+ holdOp(4500);setTimeout(()=>pullStatus(true),1200);setTimeout(()=>pullStatus(true),3200);renderAll();toast('Memuat preset '+n+'…')};
 
 /* ---------- SISTEM ---------- */
 function renderSys(){
@@ -646,7 +791,9 @@ function renderSys(){
  const sb=$('#sb');if(INFO.ok)sb.value=String(INFO.idle);
  $$('#th button').forEach((b,i)=>b.className=INFO.theme===i?'on':'');
  const lg=x=>x?'kustom':'bawaan';$('#lgi').textContent=INFO.ok?`Logo di alat: boot = ${lg(INFO.lb)}, standby = ${lg(INFO.ls)}${INFO.fs?'':'  • penyimpanan logo belum siap'}`:'Hubungkan alat untuk mengirim logo.';
- $('#dmo').checked=demo;$('#aut').checked=LS.get('dlmsAuto','1')==='1';$('#nobt').hidden=!!navigator.bluetooth;const hp=PW.has();$('#pwd').textContent=hp?'• aktif':'• belum diset';$('#pw0').hidden=!hp;$('#pwx').hidden=!hp}
+ $('#dmo').checked=demo;$('#aut').checked=LS.get('dlmsAuto','1')==='1';$('#nobt').hidden=!!navigator.bluetooth;const hp=PW.has();$('#pwd').textContent=hp?'• aktif':'• belum diset';$('#pw0').hidden=!hp;$('#pwx').hidden=!hp;
+ const w=$('#stw');w.hidden=!(INFO.ok&&INFO.stLen&&(INFO.stVer||0)<3);
+ if(!w.hidden)w.textContent='Peringatan: status dari alat terpotong ('+INFO.stLen+' byte, perlu 118). Biasanya karena paket Bluetooth HP kecil (MTU). '+(INFO.stVer?'Sebagian setingan (gate/generator/input/limiter/phase) tidak bisa dibaca dari alat.':'Setingan alat tidak bisa dibaca sama sekali; pakai "Kirim ke alat" supaya alat mengikuti aplikasi.')}
 function buildSys(){
  const sb=$('#sb');STBY.forEach(v=>sb.add(new Option(v?(v>=60?v/60+' menit':v+' detik'):'Nonaktif',v)));
  sb.onchange=async()=>{const v=+sb.value;try{const r=await gcmd([0x16,...i16(v)]);toast(r[1]===0?'Standby disimpan':ERR[r[1]]||'Gagal')}catch(e){toast(e.message)}};
@@ -662,8 +809,9 @@ function buildSys(){
  $('#rbt').onclick=()=>{try{dev&&dev.gatt.disconnect()}catch(e){}toast('Koneksi diputus')};
  $('#rdf').onclick=async()=>{if(!await modal({title:'Reset nama & PIN?',msg:'Nama Bluetooth kembali "DLMS Mini 240" dan PIN dihapus.',ok:'Reset',danger:true}))return;
   try{await gcmd([0x11,...asc('DLMS Mini 240')]);const r=await gcmd([0x12]);if(r[1]===0){INFO.pin=0;INFO.name='DLMS Mini 240';LS.del('dlmsPin');renderSys();toast('Direset – restart alat agar nama berlaku')}}catch(e){toast(e.message)}};
- $('#sy').onclick=syncAll;
- $('#aut').onchange=e=>{LS.set('dlmsAuto',e.target.checked?'1':'0');if(e.target.checked)armAuto()};
+ $('#sy').onclick=()=>{if(!connected)return toast('Hubungkan alat dulu');syncAll()};
+ $('#sp').onclick=async()=>{if(!connected)return toast('Hubungkan alat dulu');setNote('membaca setingan alat…');const ok=await pullStatus(true);setNote('');toast(ok?'Tampilan mengikuti setingan alat':'Alat tidak mengirim status')};
+ $('#aut').onchange=e=>{LS.set('dlmsAuto',e.target.checked?'1':'0');if(e.target.checked){manual=false;directTries=0;armAuto()}};
  $('#dmo').onchange=e=>demo=e.target.checked;
  $('#tha').onclick=()=>th_(document.documentElement.dataset.t==='light'?'dark':'light');
  $('#lock').onclick=lockApp;
@@ -686,7 +834,7 @@ async function lgSend(mask){
  if(!connected)return toast('Hubungkan alat dulu');if(!LG.src)return toast('Pilih gambar dulu');
  if(!INFO.fs)return modal({title:'Penyimpanan logo belum siap',msg:'Alat belum punya partisi data untuk logo. Atur Partition Scheme yang punya SPIFFS lalu upload ulang firmware.',cancel:false});
  const data=lgBytes(),crc=crc32(data),bar=$('#lgp'),st=$('#lgs');bar.style.width='0';st.textContent='Mengirim…';$$('#lg1,#lg2,#lg3,#lgr').forEach(b=>b.disabled=true);
- const fail=m=>{st.textContent='Gagal: '+m;toast('Gagal kirim logo')};
+ const fail=m=>{st.textContent='Gagal: '+m;toast('Gagal kirim logo')};OPBUSY++;
  try{
   let r=await gcmd([0x20,mask],5000);if(r[1])return fail(ERR[r[1]]||r[1]);
   let seq=0,off=0,CH=180;
@@ -697,7 +845,7 @@ async function lgSend(mask){
   r=await gcmd([0x22,crc&255,(crc>>>8)&255,(crc>>>16)&255,(crc>>>24)&255],20000);
   if(r[1])return fail(ERR[r[1]]||r[1]);
   st.textContent='Logo terkirim.';toast('Logo tersimpan di alat');try{await gcmd([0x13],2500)}catch(e){}
- }catch(e){fail(e.message)}finally{$$('#lg1,#lg2,#lg3,#lgr').forEach(b=>b.disabled=false)}}
+ }catch(e){fail(e.message)}finally{OPBUSY--;$$('#lg1,#lg2,#lg3,#lgr').forEach(b=>b.disabled=false)}}
 function buildLogo(){
  $('#lgy').onclick=()=>lgLoad('logo-ysn.webp');
  $('#lgf').onclick=()=>$('#lgfi').click();
@@ -732,11 +880,12 @@ function lockApp(){LOCK=true;SS.set('dlmsOk','');try{dev&&dev.gatt.disconnect()}
 
 /* ---------- navigasi & alur masuk ---------- */
 const TTL={home:'Home',in:'Input & Matrix',xo:'Crossover',peq:'PEQ',lim:'Limiter',gate:'Noise Gate',tst:'Test Signal',dly:'Delay',rta:'RTA',pre:'Preset',sys:'Sistem'};
-function go(p){const d=DSPMAP[p];if(d){tab=d;S.tab=d;PAGE='dsp'}else PAGE=p;S.page=p;
+function go(p){const prev=PAGE;const d=DSPMAP[p];if(d){tab=d;S.tab=d;PAGE='dsp'}else PAGE=p;S.page=p;
  $$('.pg').forEach(x=>x.classList.toggle('on',x.id==='p-'+PAGE));$$('#nav a').forEach(a=>{const on=a.dataset.p===p;a.classList.toggle('on',on);if(on)try{a.scrollIntoView({block:'nearest',inline:'center'})}catch(e){}});
  $('#ttl').textContent=TTL[p]||p;$('#pgs').scrollTop=0;
  if(PAGE==='dsp')drawTab();else ANIM=null;
- if(p==='rta'){drawSpec();syncSpec()}
+ syncSpec();   // minta spektrum sesuai halaman yang dibuka (atau hentikan kalau tidak perlu)
+ if(p==='rta'){specAt=Date.now();specDirty=true;drawSpec();syncSpec()}
  if(p==='in')renderIn();if(p==='home')renderCards();if(p==='sys'){renderSys();lgDraw()}}
 $$('#nav a').forEach(a=>a.onclick=e=>{e.preventDefault();go(a.dataset.p)});
 function renderAll(){renderCards();renderIn();renderSys();if(PAGE==='dsp'){if(tab==='x'&&XU.length)xSync();else drawTab()}}
@@ -751,9 +900,9 @@ async function boot(){
  if((connected&&!PW.has())||SS.get('dlmsOk')==='1')enterApp();else showLogin()}
 
 /* ---------- start ---------- */
-$('#bc').onclick=$('#bc2').onclick=$('#bc3').onclick=()=>{if(dev&&dev.gatt.connected){dev.gatt.disconnect()}else if(!navigator.bluetooth)modal({title:'Tidak didukung',msg:'Browser ini tidak mendukung Web Bluetooth. Pakai Chrome di Android / PC.',cancel:false});else connect(true)};
-$('#rt').onclick=()=>{specOn=!specOn;$('#rt').className=specOn?'on':'';if(!specOn){spec=new Uint8Array(32);pk.fill(0);drawSpec()}syncSpec()};
-setInterval(()=>{if(specOn&&PAGE==='rta')syncSpec()},2000);
+$('#bc').onclick=$('#bc2').onclick=$('#bc3').onclick=()=>{if(dev&&dev.gatt.connected){manual=true;dev.gatt.disconnect()}else if(!navigator.bluetooth)modal({title:'Tidak didukung',msg:'Browser ini tidak mendukung Web Bluetooth. Pakai Chrome di Android / PC.',cancel:false});else{manual=false;directTries=0;connect(true)}};
+$('#rt').onclick=()=>{specOn=!specOn;specAt=Date.now();specDirty=true;$('#rt').className=specOn?'on':'';if(!specOn){spec=new Uint8Array(32);pk.fill(0);drawSpec()}syncSpec()};
+setInterval(()=>{if(wantSpec())syncSpec()},1500);setInterval(hb,2000);
 $('#rs').onchange=()=>{S.rch=+$('#rs').value;save();syncSpec()};$('#rp').onchange=()=>{S.rpt=+$('#rp').value;save();syncSpec()};
 RSRC.forEach(([n,v])=>$('#rs').add(new Option(n,v)));RPT.forEach((n,i)=>$('#rp').add(new Option(n,i)));$('#rs').value=S.rch;$('#rp').value=S.rpt;
 th_(LS.get('dlmsT','dark'));
@@ -764,8 +913,8 @@ let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{
  if(PAGE==='rta')drawSpec();if(PAGE==='sys')lgDraw()},120)});
 document.addEventListener('focusin',e=>{if(e.target.tagName==='INPUT'&&e.target.type==='number')setTimeout(()=>{try{e.target.select()}catch(x){}},0)});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.type==='number')e.target.blur()});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!connected)armAuto()});
-buildMeters();buildOuts();buildInputs();buildPre();buildSys();tickMeters();setSt(false);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)return;if(!connected){directTries=0;armAuto()}else{lastRx=0;hb()}});   // HP baru dibuka: cek link masih hidup
+buildMeters();buildOuts();buildInputs();$$('#isel button').forEach((b,i)=>b.onclick=()=>{S.isel=i;save();ipk.fill(0);spDirty=true;renderIn();syncSpec()});buildPre();buildSys();tickMeters();setSt(false);
 if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 boot();
 </script></body></html>
